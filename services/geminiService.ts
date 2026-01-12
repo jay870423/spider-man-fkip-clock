@@ -197,20 +197,26 @@ export async function* sendMessageToCharacterStream(
       const functionCalls = content.functionCalls;
       if (functionCalls && functionCalls.length > 0) {
         for (const call of functionCalls) {
+            // Safely access optional args
+            const args = call.args || {};
+
             if (call.name === "switchCharacter") {
-                const nextId = call.args['characterId'] as string;
-                yield { nextCharacterId: nextId };
+                const nextId = args['characterId'] as string;
+                if (nextId) yield { nextCharacterId: nextId };
             }
             if (call.name === "setAlarm") {
-                const time = call.args['time'] as string;
-                const soundType = (call.args['soundType'] as string) || 'digital';
-                yield { alarmConfig: { time, soundType } };
+                const time = args['time'] as string;
+                const soundType = (args['soundType'] as string) || 'digital';
                 
-                // Yield a confirmation text if the model didn't generate one
-                if (!fullText) {
-                    const msg = `\n(Alarm set for ${time})`;
-                    fullText += msg;
-                    yield { textChunk: msg, fullText };
+                if (time) {
+                    yield { alarmConfig: { time, soundType } };
+                    
+                    // Yield a confirmation text if the model didn't generate one
+                    if (!fullText) {
+                        const msg = `\n(Alarm set for ${time})`;
+                        fullText += msg;
+                        yield { textChunk: msg, fullText };
+                    }
                 }
             }
             if (call.name === "stopAlarm") {
