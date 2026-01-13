@@ -260,6 +260,25 @@ const App: React.FC = () => {
     }
   };
 
+  const handleShare = async () => {
+    const shareData = {
+        title: 'Spider-Man x Zootopia AI Flip Clock',
+        text: 'Check out this amazing AI Flip Clock with 3D Spiderman & Physics!',
+        url: window.location.href
+    };
+    
+    if (navigator.share) {
+        try { await navigator.share(shareData); } catch (err) { console.log('Share canceled'); }
+    } else {
+        try {
+            await navigator.clipboard.writeText(window.location.href);
+            alert("🔗 Link copied! Share it to start the trend!");
+        } catch (err) {
+            alert("Could not copy link.");
+        }
+    }
+  };
+
   return (
     <div className={`min-h-screen w-full bg-gradient-to-br ${currentTheme.bgGradient} transition-colors duration-1000 flex flex-col items-center overflow-x-hidden relative`}>
       
@@ -279,13 +298,23 @@ const App: React.FC = () => {
           />
       )}
 
-      <button 
-        onClick={toggleFullscreen}
-        className={`fixed top-4 right-4 z-50 bg-black/30 hover:bg-black/50 text-white/50 hover:text-white p-2 rounded-full transition-all duration-500 ${isIdle ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
-        title="Toggle Fullscreen"
-      >
-         {isFullscreen ? '⤓' : '⤢'}
-      </button>
+      {/* Control Buttons (Top Right) */}
+      <div className={`fixed top-4 right-4 z-50 flex gap-2 transition-all duration-500 ${isIdle ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+         <button 
+           onClick={handleShare}
+           className="bg-black/30 hover:bg-black/50 text-white/50 hover:text-white p-2 rounded-full transition-all"
+           title="Share App"
+         >
+            🔗
+         </button>
+         <button 
+           onClick={toggleFullscreen}
+           className="bg-black/30 hover:bg-black/50 text-white/50 hover:text-white p-2 rounded-full transition-all"
+           title="Toggle Fullscreen"
+         >
+            {isFullscreen ? '⤓' : '⤢'}
+         </button>
+      </div>
 
       <div className="z-10 w-full max-w-[1600px] flex flex-col items-center min-h-screen py-2 sm:py-4 px-4">
         
