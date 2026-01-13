@@ -38,7 +38,7 @@ export interface ChatMessage {
 export interface Alarm {
   id: string;
   time: string; // HH:mm 24-hour format
-  soundType: 'digital' | 'nature' | 'energetic';
+  soundType: 'digital' | 'nature' | 'energetic' | 'classical';
   isActive: boolean;
 }
 

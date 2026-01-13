@@ -57,7 +57,7 @@ const setAlarmTool: FunctionDeclaration = {
       },
       soundType: {
         type: Type.STRING,
-        description: "The type of sound. Options: 'digital' (default), 'nature' (birds), 'energetic'. Optional.",
+        description: "The type of sound. Options: 'digital' (beep), 'nature' (birds), 'energetic' (loud), 'classical' (melodic/music box). IMPORTANT: If user asks for a specific song, artist (e.g. Jay Chou, Pop, Taylor Swift) or pleasant music, ALWAYS choose 'classical'.",
       },
     },
     required: [],
@@ -94,12 +94,16 @@ const openAITools = [
     type: "function",
     function: {
       name: "setAlarm",
-      description: "Set or update alarm. Time and soundType are optional.",
+      description: "Set/update alarm. Time/soundType optional.",
       parameters: {
         type: "object",
         properties: {
           time: { type: "string", description: "HH:mm format" },
-          soundType: { type: "string", enum: ["digital", "nature", "energetic"] }
+          soundType: { 
+            type: "string", 
+            description: "Options: digital, nature, energetic, classical. Map songs/artists to 'classical'.",
+            enum: ["digital", "nature", "energetic", "classical"] 
+          }
         },
         required: []
       }
@@ -215,6 +219,7 @@ async function* streamGemini(theme: ThemeConfig, userMessage: string): AsyncGene
       - Call 'switchCharacter' if user asks to switch.
       - Call 'setAlarm' (HH:mm 24h) if user sets alarm or wants to change sound.
       - Call 'stopAlarm' if user says stop/shut up.
+      - If user asks for music/songs (like Jay Chou), use soundType='classical' in setAlarm.
       - After calling a tool, wait for the result and then confirm to the user naturally.
     `;
 
@@ -281,8 +286,6 @@ async function* streamGemini(theme: ThemeConfig, userMessage: string): AsyncGene
       }
 
       // 3. Send Tool Results Back to Model
-      // FIX: Must pass as { message: Part[] } or just Part[] depending on exact SDK version, 
-      // but guidelines say use named parameter `message`.
       const toolResultStream = await chatSession.sendMessageStream({ message: functionResponses });
       
       // Process Second Turn (Model's confirmation text)
@@ -320,6 +323,7 @@ async function* streamDeepSeek(theme: ThemeConfig, userMessage: string, apiKey?:
                 - Call 'switchCharacter' function if user asks to switch.
                 - Call 'setAlarm' (HH:mm 24h) if user sets alarm.
                 - Call 'stopAlarm' if user wants to stop the alarm.
+                - If user wants music/song (Jay Chou etc), set soundType='classical'.
                 - Keep replies concise.`
             }
         ];
