@@ -145,11 +145,6 @@ const App: React.FC = () => {
         setDateString(dateFormatter.format(now));
 
         // CHECK ALARM
-        // We check if alarm exists, is active, not already ringing
-        // And if current time matches alarm time (HH:mm)
-        // Also check seconds to trigger only once at the start of the minute (s === 0)
-        // OR simply checking if we matched the minute allows for redundancy if frame is skipped,
-        // but to prevent loop we check !isAlarmRinging.
         if (alarm && alarm.isActive && !isAlarmRinging) {
             const current24h = `${pad(rawHours)}:${pad(rawMinutes)}`;
             if (current24h === alarm.time && s === 0) {
@@ -169,12 +164,10 @@ const App: React.FC = () => {
   useEffect(() => {
     let interval: any;
     if (isAlarmRinging && alarm) {
-        // Play immediately
         playAlarmSound(alarm.soundType);
-        // Then loop
         interval = setInterval(() => {
             playAlarmSound(alarm.soundType);
-        }, 1000); // Pulse every second
+        }, 1000); 
     }
     return () => clearInterval(interval);
   }, [isAlarmRinging, alarm]);
@@ -226,23 +219,35 @@ const App: React.FC = () => {
           setThemes(prev => ({ ...prev, [newTheme.id]: newTheme }));
           setThemeId(newTheme.id);
       } else {
-          alert("Could not generate character.");
+          alert("Could not generate character. Check API configuration.");
       }
   };
 
-  const handleSetAlarm = (timeStr: string, soundType: string) => {
-      // timeStr comes from AI as HH:mm 24h format
-      setAlarm({
-          id: Date.now().toString(),
-          time: timeStr,
-          soundType: soundType as any,
-          isActive: true
+  // Logic: Merge with existing alarm if fields are missing
+  const handleSetAlarm = (timeStr?: string, soundType?: string) => {
+      setAlarm(prev => {
+          // If updating existing alarm
+          if (prev) {
+              return {
+                  ...prev,
+                  time: timeStr || prev.time,
+                  soundType: (soundType as any) || prev.soundType,
+                  isActive: true
+              };
+          }
+          // If creating new alarm
+          return {
+              id: Date.now().toString(),
+              time: timeStr || '08:00', // Default backup if AI fails to provide time on first create
+              soundType: (soundType as any) || 'digital',
+              isActive: true
+          };
       });
   };
 
   const stopAlarm = () => {
       setIsAlarmRinging(false);
-      setAlarm(null); // Clear alarm after it rings
+      setAlarm(null); 
   };
 
   const toggleFullscreen = () => {
@@ -264,10 +269,8 @@ const App: React.FC = () => {
          <div className="absolute bottom-1/4 right-1/4 w-[40vw] h-[40vw] bg-black rounded-full blur-[100px]"></div>
       </div>
 
-      {/* Spider-Man Overlay - Always visible! */}
       <Spiderman />
 
-      {/* ALARM OVERLAY */}
       {isAlarmRinging && alarm && (
           <AlarmOverlay 
             time={alarm.time} 
@@ -276,7 +279,6 @@ const App: React.FC = () => {
           />
       )}
 
-      {/* Fullscreen Toggle Button (Hidden in Screensaver mode) */}
       <button 
         onClick={toggleFullscreen}
         className={`fixed top-4 right-4 z-50 bg-black/30 hover:bg-black/50 text-white/50 hover:text-white p-2 rounded-full transition-all duration-500 ${isIdle ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
@@ -285,9 +287,9 @@ const App: React.FC = () => {
          {isFullscreen ? '⤓' : '⤢'}
       </button>
 
-      <div className="z-10 w-full max-w-[1600px] flex flex-col items-center min-h-screen py-2 sm:py-6 px-4">
+      <div className="z-10 w-full max-w-[1600px] flex flex-col items-center min-h-screen py-2 sm:py-4 px-4">
         
-        {/* HEADER AREA - Hides on Idle */}
+        {/* HEADER AREA - Flexible margin for responsiveness */}
         <header className={`flex flex-col items-center w-full mb-4 lg:mb-8 flex-none pt-2 transition-opacity duration-1000 ${isIdle ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
             <h1 className="text-white/95 font-display text-3xl sm:text-5xl tracking-[0.2em] mb-4 drop-shadow-[0_0_15px_rgba(255,255,255,0.4)] text-center">SPIDER-MAN FLIP CLOCK</h1>
             
@@ -296,7 +298,6 @@ const App: React.FC = () => {
                    <span className="opacity-90">📅</span>
                    <span className="font-bold tracking-wide uppercase">{dateString}</span>
                 </div>
-                {/* Alarm Status Indicator */}
                 {alarm && alarm.isActive && (
                     <div className="flex items-center gap-2 text-red-400 font-bold sm:border-r border-white/20 sm:pr-4 animate-pulse">
                         <span>⏰</span>
@@ -328,11 +329,11 @@ const App: React.FC = () => {
             />
         </header>
 
-        <div className="flex-1 w-full flex flex-col xl:flex-row items-center xl:items-start xl:justify-center gap-8 xl:gap-20 pb-10">
+        {/* Main Content Area - Uses Flex to distribute space evenly */}
+        <div className="flex-1 w-full flex flex-col xl:flex-row items-center xl:items-start xl:justify-center gap-8 xl:gap-20 pb-4">
             
-            {/* CLOCK AREA - Always Visible */}
+            {/* CLOCK AREA */}
             <div className={`flex flex-col items-center justify-center relative w-full xl:w-auto order-1 transition-all duration-1000 ${isIdle ? 'scale-110 xl:scale-125 translate-y-[10vh]' : ''}`}>
-                
                 <div className="h-14 sm:h-20 lg:h-24 relative pointer-events-none w-full flex justify-center -mb-2 z-20">
                     <div className="relative w-48 sm:w-64 h-full">
                          <div className="absolute bottom-0 left-0 text-5xl sm:text-6xl lg:text-7xl animate-bounce-slow" style={{ animationDelay: '0.2s' }}>
@@ -344,34 +345,28 @@ const App: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Clock Card Container */}
                 <div className="relative p-2 sm:p-6 rounded-[2rem] flex justify-center">
-                    
                     <div className="relative z-10 flex items-center justify-center gap-1 sm:gap-2">
                         {/* HOURS */}
                         <div className="flex gap-1">
                             <FlipCard digit={time.hours[0] || '0'} animationClass={currentTheme.animationClass} />
                             <FlipCard digit={time.hours[1] || '0'} animationClass={currentTheme.animationClass} />
                         </div>
-                        
                         {/* COLON */}
                         <div className="flex flex-col gap-2 sm:gap-4 px-1 pt-2">
                              <div className="w-1.5 h-1.5 sm:w-2.5 sm:h-2.5 bg-white/90 rounded-full shadow-[0_0_10px_rgba(255,255,255,0.8)]"></div>
                              <div className="w-1.5 h-1.5 sm:w-2.5 sm:h-2.5 bg-white/90 rounded-full shadow-[0_0_10px_rgba(255,255,255,0.8)]"></div>
                         </div>
-                        
                         {/* MINUTES */}
                         <div className="flex gap-1">
                             <FlipCard digit={time.minutes[0] || '0'} animationClass={currentTheme.animationClass} />
                             <FlipCard digit={time.minutes[1] || '0'} animationClass={currentTheme.animationClass} />
                         </div>
-                        
                         {/* COLON */}
                         <div className="hidden sm:flex flex-col gap-2 sm:gap-4 px-1 pt-2">
                              <div className="w-1.5 h-1.5 sm:w-2.5 sm:h-2.5 bg-white/90 rounded-full shadow-[0_0_10px_rgba(255,255,255,0.8)]"></div>
                              <div className="w-1.5 h-1.5 sm:w-2.5 sm:h-2.5 bg-white/90 rounded-full shadow-[0_0_10px_rgba(255,255,255,0.8)]"></div>
                         </div>
-
                         {/* SECONDS */}
                         <div className="hidden sm:flex gap-1">
                             <FlipCard digit={time.seconds[0] || '0'} animationClass={currentTheme.animationClass} isSeconds />
@@ -388,8 +383,14 @@ const App: React.FC = () => {
                 </div>
             </div>
 
-            {/* CHAT AREA - Hides on Idle */}
-            <div className={`w-full max-w-xl xl:w-[500px] xl:pt-16 order-2 px-2 sm:px-0 transition-opacity duration-1000 ${isIdle ? 'opacity-0 pointer-events-none' : 'opacity-100'} ${isAlarmRinging ? 'z-[101] relative' : 'relative'}`}>
+            {/* CHAT AREA - Flexible container */}
+            <div className={`
+                w-full max-w-xl xl:w-[500px] 
+                order-2 px-2 sm:px-0 
+                transition-opacity duration-1000 
+                ${isIdle ? 'opacity-0 pointer-events-none' : 'opacity-100'} 
+                ${isAlarmRinging ? 'z-[101] relative' : 'relative'}
+            `}>
                  <ChatWidget 
                     theme={currentTheme} 
                     onCharacterSwitch={(newId) => setThemeId(newId)}

@@ -7,6 +7,8 @@ export enum CharacterIdEnum {
 
 export type CharacterId = CharacterIdEnum | string;
 
+export type AIProvider = 'GEMINI' | 'DEEPSEEK';
+
 export interface ThemeConfig {
   id: CharacterId;
   name: string;
@@ -45,8 +47,8 @@ export interface StreamUpdate {
   fullText?: string;
   nextCharacterId?: CharacterId;
   alarmConfig?: {
-    time: string;
-    soundType: string;
+    time?: string;
+    soundType?: string;
   };
   stopAlarm?: boolean;
   isComplete?: boolean;

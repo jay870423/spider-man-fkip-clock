@@ -1,12 +1,12 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ThemeConfig, ChatMessage, CharacterId } from '../types';
+import { ThemeConfig, ChatMessage, CharacterId, AIProvider } from '../types';
 import { sendMessageToCharacterStream, resetChatSession } from '../services/geminiService';
 
 interface Props {
   theme: ThemeConfig;
   onCharacterSwitch: (id: CharacterId) => void;
-  onSetAlarm: (time: string, soundType: string) => void;
+  onSetAlarm: (time?: string, soundType?: string) => void;
   onStopAlarm: () => void;
 }
 
@@ -18,8 +18,19 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
+  // Settings State
+  const [showSettings, setShowSettings] = useState(false);
+  const [provider, setProvider] = useState<AIProvider>('GEMINI');
+  const [deepSeekKey, setDeepSeekKey] = useState(localStorage.getItem('DEEPSEEK_KEY') || '');
+
   // Track the current theme ID to handle race conditions during streaming
   const activeThemeIdRef = useRef(theme.id);
+
+  // Load provider preference
+  useEffect(() => {
+    const savedProvider = localStorage.getItem('AI_PROVIDER') as AIProvider;
+    if (savedProvider) setProvider(savedProvider);
+  }, []);
 
   // Reset chat when theme changes
   useEffect(() => {
@@ -43,6 +54,14 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
     scrollToBottom();
   }, [messages, isLoading]);
 
+  const saveSettings = () => {
+      localStorage.setItem('AI_PROVIDER', provider);
+      localStorage.setItem('DEEPSEEK_KEY', deepSeekKey);
+      setShowSettings(false);
+      // Reset session to apply new provider context cleanly
+      resetChatSession(); 
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
@@ -56,7 +75,8 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
     setIsLoading(true);
 
     try {
-      const stream = sendMessageToCharacterStream(theme, userMsg);
+      // Pass provider and optional key
+      const stream = sendMessageToCharacterStream(theme, userMsg, provider, deepSeekKey);
       let currentResponse = "";
       
       for await (const update of stream) {
@@ -132,11 +152,17 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
       <div className={`
           relative flex flex-col 
           w-full
-          h-[350px] sm:h-[450px] lg:h-[500px] /* Responsive Heights */
+          /* Responsive Height Logic: 
+             - Mobile: 50vh (keeps keyboard space)
+             - Small Tablet: 55vh
+             - Desktop: 60vh
+             - Max Height limit to look good on massive screens
+          */
+          h-[50vh] sm:h-[55vh] md:h-[60vh] max-h-[700px] min-h-[350px]
           rounded-[2rem] 
           ${theme.primaryColor} bg-opacity-30 backdrop-blur-xl 
           border border-white/20 shadow-2xl 
-          transition-colors duration-500
+          transition-all duration-500 ease-in-out
           overflow-hidden
       `}>
         
@@ -145,23 +171,80 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 border-white/60 overflow-hidden shadow-md shrink-0 transition-transform duration-300 hover:scale-110">
                 <img src={theme.avatarUrl} className="w-full h-full object-cover" alt={theme.name} />
              </div>
-             <div className="min-w-0">
+             <div className="min-w-0 flex-1">
                  <h3 className="text-white font-display text-lg sm:text-xl tracking-wider uppercase truncate">{theme.name}</h3>
                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse shrink-0"></div>
-                    <p className="text-white/60 text-xs font-sans truncate">{theme.role}</p>
+                    <div className={`w-2 h-2 rounded-full animate-pulse shrink-0 ${provider === 'GEMINI' ? 'bg-green-400' : 'bg-blue-400'}`}></div>
+                    <p className="text-white/60 text-xs font-sans truncate">{theme.role} ({provider === 'GEMINI' ? 'Gemini' : 'DeepSeek'})</p>
                  </div>
              </div>
              
+             {/* Settings Toggle */}
+             <button
+                onClick={() => setShowSettings(!showSettings)}
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-white transition-colors"
+                title="Settings"
+             >
+                ⚙️
+             </button>
+
              {/* Reset Button */}
              <button 
                 onClick={handleReset}
-                className="ml-auto w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-white transition-colors"
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-white transition-colors"
                 title="Reset Chat"
              >
                 ⟳
              </button>
         </div>
+
+        {/* Settings Panel (Overlay) */}
+        {showSettings && (
+            <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md p-6 flex flex-col items-center justify-center text-white animate-fade-in-up">
+                <h3 className="text-xl font-display mb-6 tracking-widest">CHAT SETTINGS</h3>
+                
+                <div className="w-full max-w-xs space-y-4">
+                    <div>
+                        <label className="text-xs text-white/50 uppercase font-bold block mb-2">Model Provider</label>
+                        <div className="flex bg-white/10 rounded-lg p-1">
+                            <button 
+                                onClick={() => setProvider('GEMINI')}
+                                className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${provider === 'GEMINI' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
+                            >
+                                Gemini
+                            </button>
+                            <button 
+                                onClick={() => setProvider('DEEPSEEK')}
+                                className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${provider === 'DEEPSEEK' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
+                            >
+                                DeepSeek
+                            </button>
+                        </div>
+                    </div>
+
+                    {provider === 'DEEPSEEK' && (
+                        <div className="animate-fade-in-up">
+                            <label className="text-xs text-white/50 uppercase font-bold block mb-2">DeepSeek API Key</label>
+                            <input 
+                                type="password" 
+                                value={deepSeekKey}
+                                onChange={(e) => setDeepSeekKey(e.target.value)}
+                                placeholder="sk-..."
+                                className="w-full bg-black/40 border border-white/20 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 outline-none"
+                            />
+                            <p className="text-[10px] text-white/30 mt-1">Key is stored locally in your browser.</p>
+                        </div>
+                    )}
+
+                    <button 
+                        onClick={saveSettings}
+                        className="w-full py-3 mt-4 bg-white text-black font-bold rounded-lg hover:bg-white/90 transition-colors uppercase tracking-wider"
+                    >
+                        Save & Close
+                    </button>
+                </div>
+            </div>
+        )}
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 scroll-smooth">
