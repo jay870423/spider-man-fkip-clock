@@ -9,7 +9,15 @@ let currentThemeId: string | null = null;
 
 const getAiClient = () => {
   if (!ai && process.env.API_KEY) {
-    ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // For China accessibility: 
+    // We use the local origin as baseUrl so requests are proxied via Vercel Rewrites
+    // vercel.json rewrites /v1beta/(.*) to the Google Gemini API endpoint
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin : undefined;
+    
+    ai = new GoogleGenAI({ 
+      apiKey: process.env.API_KEY,
+      baseUrl: baseUrl
+    });
   }
   return ai;
 };

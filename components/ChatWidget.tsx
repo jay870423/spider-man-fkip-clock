@@ -88,7 +88,7 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
             source.addEventListener('ended', () => audioSources.current.delete(source));
             source.start(nextStartTime.current);
             nextStartTime.current += buffer.duration;
-            audioSources.current.add(source);
+            audioSources.add(source);
           }
           
           if (message.serverContent?.interrupted) {
@@ -97,10 +97,11 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
             nextStartTime.current = 0;
           }
 
-          if (message.toolCall) {
+          // Safety fix for TS18048: Check for toolCall and functionCalls before iterating
+          if (message.toolCall?.functionCalls) {
             message.toolCall.functionCalls.forEach((fc: FunctionCall) => {
                 if (fc.name === 'playMusic') onSetAlarm();
-                session.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { result: "ok" } } });
+                session.sendToolResponse({ functionResponses: [{ id: fc.id, name: fc.name, response: { result: "ok" } }] });
             });
           }
         },
