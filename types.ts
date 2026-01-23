@@ -9,6 +9,8 @@ export type CharacterId = CharacterIdEnum | string;
 
 export type AIProvider = 'GEMINI' | 'DEEPSEEK';
 
+export type MoodType = 'neutral' | 'calm' | 'cheerful' | 'focus' | 'supportive';
+
 export interface ThemeConfig {
   id: CharacterId;
   name: string;
@@ -33,11 +35,12 @@ export interface TimeState {
 export interface ChatMessage {
   role: 'user' | 'model';
   text: string;
+  imageUrl?: string; // New: Supports AI generated images
 }
 
 export interface Alarm {
   id: string;
-  time: string; // HH:mm 24-hour format
+  time: string;
   soundType: 'digital' | 'nature' | 'energetic' | 'classical';
   isActive: boolean;
 }
@@ -50,6 +53,9 @@ export interface StreamUpdate {
     time?: string;
     soundType?: string;
   };
+  imagePrompt?: string; // New: Request to generate image
+  generatedImageUrl?: string; // New: The final image
+  moodMusic?: MoodType; // New: Update background music mood
   stopAlarm?: boolean;
   isComplete?: boolean;
 }

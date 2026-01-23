@@ -8,8 +8,9 @@ import { ChatWidget } from './components/ChatWidget';
 import { AddCharacterModal } from './components/AddCharacterModal';
 import { Spiderman } from './components/Spiderman';
 import { AlarmOverlay } from './components/AlarmOverlay';
-import { generateNewCharacterTheme } from './services/geminiService';
-import { playAlarmSound } from './utils/soundUtils';
+import { generateNewCharacterTheme, generatePersonalizedAlarmVoice } from './services/geminiService';
+import { playContextualVibe, stopAllSounds } from './utils/soundUtils';
+import { decodeAudioData } from './utils/audioUtils';
 
 const getWeatherIcon = (code: number) => {
   if (code === 0) return '☀️'; 
@@ -25,12 +26,10 @@ const getWeatherIcon = (code: number) => {
 const App: React.FC = () => {
   const [themes, setThemes] = useState<Record<string, ThemeConfig>>(THEMES);
   const [themeId, setThemeId] = useState<CharacterId>(Object.keys(THEMES)[0]);
-  
-  // Alarm State
   const [alarm, setAlarm] = useState<Alarm | null>(null);
   const [isAlarmRinging, setIsAlarmRinging] = useState(false);
+  const audioContext = useRef<AudioContext | null>(null);
 
-  // Initialize with correct time
   const [time, setTime] = useState<TimeState>(() => {
     const now = new Date();
     let hours = now.getHours();
@@ -46,399 +45,162 @@ const App: React.FC = () => {
 
   const [dateString, setDateString] = useState<string>('');
   const [weather, setWeather] = useState<{temp: number, code: number, city: string} | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isIdle, setIsIdle] = useState(false); // Screensaver mode state
-  const [isFullscreen, setIsFullscreen] = useState(false);
   
   const currentTheme = themes[themeId] || themes[Object.keys(themes)[0]];
 
-  // --- WAKE LOCK (Keep screen on) ---
-  useEffect(() => {
-    let wakeLock: any = null;
-    const requestWakeLock = async () => {
-        try {
-            if ('wakeLock' in navigator) {
-                // @ts-ignore
-                wakeLock = await navigator.wakeLock.request('screen');
-            }
-        } catch (err) {
-            console.log("Wake Lock not supported or rejected:", err);
-        }
-    };
+  // 触发闹钟
+  const triggerAlarm = async () => {
+    setIsAlarmRinging(true);
+    const hour = new Date().getHours();
+    let vibe: 'morning' | 'afternoon' | 'night' = 'night';
+    if (hour >= 5 && hour < 11) vibe = 'morning';
+    else if (hour >= 11 && hour < 17) vibe = 'afternoon';
     
-    const handleVisibilityChange = () => {
-        if (document.visibilityState === 'visible') {
-            requestWakeLock();
-        }
-    };
+    playContextualVibe(vibe);
 
-    requestWakeLock();
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-        if (wakeLock) wakeLock.release();
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
+    const voiceBytes = await generatePersonalizedAlarmVoice(currentTheme);
+    if (voiceBytes) {
+        if (!audioContext.current) audioContext.current = new (window.AudioContext || (window as any).webkitAudioContext)({sampleRate: 24000});
+        const buffer = await decodeAudioData(voiceBytes, audioContext.current, 24000, 1);
+        const source = audioContext.current.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioContext.current.destination);
+        source.start(audioContext.current.currentTime + 1);
     }
-  }, []);
+  };
 
-  // --- IDLE TIMER (Screensaver Trigger) ---
-  useEffect(() => {
-      let timeout: any;
-      const IDLE_LIMIT = 10000; // 10 seconds to trigger screensaver
-
-      const resetTimer = () => {
-          if (isIdle) setIsIdle(false);
-          clearTimeout(timeout);
-          timeout = setTimeout(() => setIsIdle(true), IDLE_LIMIT);
-      };
-
-      window.addEventListener('mousemove', resetTimer);
-      window.addEventListener('touchstart', resetTimer);
-      window.addEventListener('keydown', resetTimer);
-      window.addEventListener('click', resetTimer);
-      
-      resetTimer(); // Start timer on mount
-
-      return () => {
-          clearTimeout(timeout);
-          window.removeEventListener('mousemove', resetTimer);
-          window.removeEventListener('touchstart', resetTimer);
-          window.removeEventListener('keydown', resetTimer);
-          window.removeEventListener('click', resetTimer);
-      };
-  }, [isIdle]);
-
-  // --- TIME LOOP (Clock & Alarm Check) ---
   useEffect(() => {
     let frameId: number;
-    let lastSecond = -1;
-
-    const dateFormatter = new Intl.DateTimeFormat('en-US', {
-       weekday: 'short', 
-       month: 'short', 
-       day: 'numeric' 
-    });
-
-    const updateTime = () => {
+    const update = () => {
       const now = new Date();
-      const s = now.getSeconds();
-
-      if (s !== lastSecond) {
-        lastSecond = s;
-        
-        const rawHours = now.getHours();
-        const rawMinutes = now.getMinutes();
-        
-        // Update Clock State
-        let displayHours = rawHours % 12;
-        displayHours = displayHours ? displayHours : 12; 
-        const ampm = rawHours >= 12 ? 'PM' : 'AM';
-        
-        const pad = (n: number) => n.toString().padStart(2, '0');
-
-        setTime({
-          hours: pad(displayHours),
-          minutes: pad(rawMinutes),
-          seconds: pad(s),
-          ampm
-        });
-
-        setDateString(dateFormatter.format(now));
-
-        // CHECK ALARM
-        if (alarm && alarm.isActive && !isAlarmRinging) {
-            const current24h = `${pad(rawHours)}:${pad(rawMinutes)}`;
-            if (current24h === alarm.time && s === 0) {
-                setIsAlarmRinging(true);
-            }
-        }
-      }
+      const rawHours = now.getHours();
+      const pad = (n: number) => n.toString().padStart(2, '0');
       
-      frameId = requestAnimationFrame(updateTime);
+      setTime({
+        hours: pad(rawHours % 12 || 12),
+        minutes: pad(now.getMinutes()),
+        seconds: pad(now.getSeconds()),
+        ampm: rawHours >= 12 ? 'PM' : 'AM'
+      });
+      setDateString(new Intl.DateTimeFormat('zh-CN', { weekday: 'short', month: 'short', day: 'numeric' }).format(now));
+      
+      if (alarm?.isActive && `${pad(rawHours)}:${pad(now.getMinutes())}` === alarm.time && now.getSeconds() === 0) {
+        triggerAlarm();
+        setAlarm(prev => prev ? {...prev, isActive: false} : null);
+      }
+      frameId = requestAnimationFrame(update);
     };
-
-    frameId = requestAnimationFrame(updateTime);
+    frameId = requestAnimationFrame(update);
     return () => cancelAnimationFrame(frameId);
-  }, [alarm, isAlarmRinging]);
-
-  // --- ALARM SOUND LOOP ---
-  useEffect(() => {
-    let interval: any;
-    if (isAlarmRinging && alarm) {
-        playAlarmSound(alarm.soundType);
-        interval = setInterval(() => {
-            playAlarmSound(alarm.soundType);
-        }, 1000); 
-    }
-    return () => clearInterval(interval);
-  }, [isAlarmRinging, alarm]);
+  }, [alarm, currentTheme]);
 
   useEffect(() => {
     if ("geolocation" in navigator) {
+      setIsLocating(true);
       navigator.geolocation.getCurrentPosition(
-        async (position) => {
+        async (pos) => {
           try {
-            const { latitude, longitude } = position.coords;
-            const weatherRes = await fetch(
-              `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&temperature_unit=celsius`
-            );
-            const weatherData = await weatherRes.json();
+            const { latitude, longitude } = pos.coords;
+            const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code`);
+            const data = await res.json();
             
-            let cityName = "Local Area";
-            try {
-                const geoRes = await fetch(
-                    `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
-                );
-                const geoData = await geoRes.json();
-                cityName = geoData.city || geoData.locality || geoData.principalSubdivision || "Local Area";
-            } catch (err) {
-                console.warn("City fetch failed", err);
-            }
-
-            if (weatherData.current) {
-              setWeather({
-                temp: Math.round(weatherData.current.temperature_2m),
-                code: weatherData.current.weather_code,
-                city: cityName
-              });
-            }
-          } catch (error) {
-            console.error("Failed to fetch weather data", error);
+            // 尝试获取地理位置
+            const cityRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=zh`);
+            const cityData = await cityRes.json();
+            
+            setWeather({ 
+              temp: Math.round(data.current.temperature_2m), 
+              code: data.current.weather_code, 
+              city: cityData.city || cityData.locality || cityData.principalSubdivision || "动物城" 
+            });
+            setLocationError(null);
+          } catch (err) {
+            console.error("Weather fetch error:", err);
+            setLocationError("天气更新失败");
+          } finally {
+            setIsLocating(false);
           }
         },
-        (error) => { 
-            console.warn(`Geolocation lookup failed: ${error.message || 'Unknown error'}`); 
+        (err) => {
+          console.warn("Geolocation denied/error:", err);
+          setIsLocating(false);
+          setLocationError("无法获取定位");
         },
-        { enableHighAccuracy: false, timeout: 5000 } 
+        { timeout: 10000 }
       );
+    } else {
+      setLocationError("浏览器不支持定位");
     }
   }, []);
 
-  const handleGenerateCharacter = async (name: string) => {
-      const newTheme = await generateNewCharacterTheme(name);
-      if (newTheme) {
-          setThemes(prev => ({ ...prev, [newTheme.id]: newTheme }));
-          setThemeId(newTheme.id);
-      } else {
-          alert("Could not generate character. Check API configuration.");
-      }
-  };
-
-  // Logic: Merge with existing alarm if fields are missing
-  const handleSetAlarm = (timeStr?: string, soundType?: string) => {
-      setAlarm(prev => {
-          // If updating existing alarm
-          if (prev) {
-              return {
-                  ...prev,
-                  time: timeStr || prev.time,
-                  soundType: (soundType as any) || prev.soundType,
-                  isActive: true
-              };
-          }
-          // If creating new alarm
-          return {
-              id: Date.now().toString(),
-              time: timeStr || '08:00', // Default backup if AI fails to provide time on first create
-              soundType: (soundType as any) || 'digital',
-              isActive: true
-          };
-      });
-  };
-
-  const stopAlarm = () => {
-      setIsAlarmRinging(false);
-      setAlarm(null); 
-  };
-
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().then(() => setIsFullscreen(true));
-    } else {
-        if (document.exitFullscreen) {
-            document.exitFullscreen().then(() => setIsFullscreen(false));
-        }
-    }
-  };
-
-  const handleShare = async () => {
-    const shareData = {
-        title: 'Spider-Man x Zootopia AI Flip Clock',
-        text: 'Check out this amazing AI Flip Clock with 3D Spiderman & Physics!',
-        url: window.location.href
-    };
-    
-    if (navigator.share) {
-        try { await navigator.share(shareData); } catch (err) { console.log('Share canceled'); }
-    } else {
-        try {
-            await navigator.clipboard.writeText(window.location.href);
-            alert("🔗 Link copied! Share it to start the trend!");
-        } catch (err) {
-            alert("Could not copy link.");
-        }
-    }
-  };
-
   return (
     <div className={`min-h-screen w-full bg-gradient-to-br ${currentTheme.bgGradient} transition-colors duration-1000 flex flex-col items-center overflow-x-hidden relative`}>
-      
-      {/* Background Ambience */}
-      <div className="fixed inset-0 opacity-30 pointer-events-none overflow-hidden">
-         <div className="absolute top-1/4 left-1/4 w-[30vw] h-[30vw] bg-white rounded-full blur-[100px] animate-pulse"></div>
-         <div className="absolute bottom-1/4 right-1/4 w-[40vw] h-[40vw] bg-black rounded-full blur-[100px]"></div>
-      </div>
-
       <Spiderman />
+      
+      {isAlarmRinging && <AlarmOverlay time={time.hours + ":" + time.minutes} characterName={currentTheme.name} onStop={() => { setIsAlarmRinging(false); stopAllSounds(); }} />}
 
-      {isAlarmRinging && alarm && (
-          <AlarmOverlay 
-            time={alarm.time} 
-            characterName={currentTheme.name} 
-            onStop={stopAlarm} 
-          />
-      )}
-
-      {/* Control Buttons (Top Right) */}
-      <div className={`fixed top-4 right-4 z-50 flex gap-2 transition-all duration-500 ${isIdle ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-         <button 
-           onClick={handleShare}
-           className="bg-black/30 hover:bg-black/50 text-white/50 hover:text-white p-2 rounded-full transition-all"
-           title="Share App"
-         >
-            🔗
-         </button>
-         <button 
-           onClick={toggleFullscreen}
-           className="bg-black/30 hover:bg-black/50 text-white/50 hover:text-white p-2 rounded-full transition-all"
-           title="Toggle Fullscreen"
-         >
-            {isFullscreen ? '⤓' : '⤢'}
-         </button>
-      </div>
-
-      <div className="z-10 w-full max-w-[1600px] flex flex-col items-center min-h-screen py-2 sm:py-4 px-4">
-        
-        {/* HEADER AREA - Flexible margin for responsiveness */}
-        <header className={`flex flex-col items-center w-full mb-4 lg:mb-8 flex-none pt-2 transition-opacity duration-1000 ${isIdle ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-            <h1 className="text-white/95 font-display text-3xl sm:text-5xl tracking-[0.2em] mb-4 drop-shadow-[0_0_15px_rgba(255,255,255,0.4)] text-center">SPIDER-MAN FLIP CLOCK</h1>
+      <div className="z-10 w-full max-w-7xl flex flex-col items-center px-4 py-4 sm:py-8">
+        <header className="w-full flex flex-col items-center mb-6 sm:mb-10">
+          <h1 className="text-white font-display text-2xl sm:text-4xl tracking-widest mb-4 opacity-90">ZOOTOPIA FLIP</h1>
+          
+          <div className="flex flex-wrap justify-center items-center gap-3 bg-black/30 backdrop-blur-lg px-6 py-2 rounded-2xl border border-white/10 text-white text-xs sm:text-sm shadow-xl">
+            <span className="flex items-center gap-1.5 border-r border-white/10 pr-3">
+              📅 {dateString}
+            </span>
             
-            <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4 bg-black/40 backdrop-blur-md px-6 py-2 rounded-2xl border border-white/15 text-white font-sans text-sm sm:text-base mb-6 shadow-xl transition-all hover:bg-black/50 hover:scale-105">
-                <div className="flex items-center gap-2 sm:border-r border-white/20 sm:pr-4">
-                   <span className="opacity-90">📅</span>
-                   <span className="font-bold tracking-wide uppercase">{dateString}</span>
+            <div className="flex items-center gap-2 min-w-[120px] justify-center">
+              {isLocating ? (
+                <div className="flex items-center gap-2 animate-pulse text-white/60">
+                  <div className="w-2 h-2 bg-blue-400 rounded-full animate-ping"></div>
+                  <span>定位中...</span>
                 </div>
-                {alarm && alarm.isActive && (
-                    <div className="flex items-center gap-2 text-red-400 font-bold sm:border-r border-white/20 sm:pr-4 animate-pulse">
-                        <span>⏰</span>
-                        <span>{alarm.time}</span>
-                    </div>
-                )}
-                {weather ? (
-                   <div className="flex items-center gap-3">
-                      <span className="font-medium text-white/90">{weather.city}</span>
-                      <div className="w-px h-4 bg-white/20 hidden sm:block"></div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xl">{getWeatherIcon(weather.code)}</span>
-                        <span className="font-bold text-lg">{weather.temp}°</span>
-                      </div>
-                   </div>
-                ) : (
-                   <div className="flex items-center gap-2 opacity-60">
-                      <span className="animate-pulse">📍</span>
-                      <span className="text-xs">Locating...</span>
-                   </div>
-                )}
+              ) : weather ? (
+                <div className="flex items-center gap-2 animate-fade-in-up">
+                  <span className="text-lg">{getWeatherIcon(weather.code)}</span>
+                  <span className="font-bold">{weather.city}</span>
+                  <span className="bg-white/10 px-2 py-0.5 rounded-lg">{weather.temp}°C</span>
+                </div>
+              ) : (
+                <span className="text-white/40 italic">{locationError || "动物城办事处"}</span>
+              )}
             </div>
+          </div>
 
-            <CharacterSelector 
-                currentThemeId={themeId} 
-                themes={themes} 
-                onSelect={setThemeId} 
-                onAddClick={() => setIsModalOpen(true)}
-            />
+          <div className="mt-4 sm:mt-6 w-full max-w-md">
+            <CharacterSelector currentThemeId={themeId} themes={themes} onSelect={setThemeId} onAddClick={() => setIsModalOpen(true)} />
+          </div>
         </header>
 
-        {/* Main Content Area - Uses Flex to distribute space evenly */}
-        <div className="flex-1 w-full flex flex-col xl:flex-row items-center xl:items-start xl:justify-center gap-8 xl:gap-20 pb-4">
-            
-            {/* CLOCK AREA */}
-            <div className={`flex flex-col items-center justify-center relative w-full xl:w-auto order-1 transition-all duration-1000 ${isIdle ? 'scale-110 xl:scale-125 translate-y-[10vh]' : ''}`}>
-                <div className="h-14 sm:h-20 lg:h-24 relative pointer-events-none w-full flex justify-center -mb-2 z-20">
-                    <div className="relative w-48 sm:w-64 h-full">
-                         <div className="absolute bottom-0 left-0 text-5xl sm:text-6xl lg:text-7xl animate-bounce-slow" style={{ animationDelay: '0.2s' }}>
-                            {currentTheme.emoji}
-                         </div>
-                         <div className="absolute bottom-0 right-0 text-5xl sm:text-6xl lg:text-7xl animate-bounce-high" style={{ animationDelay: '1.5s' }}>
-                            {currentTheme.emoji}
-                         </div>
-                    </div>
-                </div>
-
-                <div className="relative p-2 sm:p-6 rounded-[2rem] flex justify-center">
-                    <div className="relative z-10 flex items-center justify-center gap-1 sm:gap-2">
-                        {/* HOURS */}
-                        <div className="flex gap-1">
-                            <FlipCard digit={time.hours[0] || '0'} animationClass={currentTheme.animationClass} />
-                            <FlipCard digit={time.hours[1] || '0'} animationClass={currentTheme.animationClass} />
-                        </div>
-                        {/* COLON */}
-                        <div className="flex flex-col gap-2 sm:gap-4 px-1 pt-2">
-                             <div className="w-1.5 h-1.5 sm:w-2.5 sm:h-2.5 bg-white/90 rounded-full shadow-[0_0_10px_rgba(255,255,255,0.8)]"></div>
-                             <div className="w-1.5 h-1.5 sm:w-2.5 sm:h-2.5 bg-white/90 rounded-full shadow-[0_0_10px_rgba(255,255,255,0.8)]"></div>
-                        </div>
-                        {/* MINUTES */}
-                        <div className="flex gap-1">
-                            <FlipCard digit={time.minutes[0] || '0'} animationClass={currentTheme.animationClass} />
-                            <FlipCard digit={time.minutes[1] || '0'} animationClass={currentTheme.animationClass} />
-                        </div>
-                        {/* COLON */}
-                        <div className="hidden sm:flex flex-col gap-2 sm:gap-4 px-1 pt-2">
-                             <div className="w-1.5 h-1.5 sm:w-2.5 sm:h-2.5 bg-white/90 rounded-full shadow-[0_0_10px_rgba(255,255,255,0.8)]"></div>
-                             <div className="w-1.5 h-1.5 sm:w-2.5 sm:h-2.5 bg-white/90 rounded-full shadow-[0_0_10px_rgba(255,255,255,0.8)]"></div>
-                        </div>
-                        {/* SECONDS */}
-                        <div className="hidden sm:flex gap-1">
-                            <FlipCard digit={time.seconds[0] || '0'} animationClass={currentTheme.animationClass} isSeconds />
-                            <FlipCard digit={time.seconds[1] || '0'} animationClass={currentTheme.animationClass} isSeconds />
-                        </div>
-                        
-                        {/* AM/PM */}
-                        <div className="ml-2 flex items-end pb-3 sm:pb-4">
-                            <span className="text-lg sm:text-2xl lg:text-3xl font-display font-bold text-white tracking-widest drop-shadow-lg">
-                                {time.ampm}
-                            </span>
-                        </div>
-                    </div>
-                </div>
+        <div className="w-full flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-16">
+          <div className="flex flex-col items-center scale-90 sm:scale-100 lg:scale-110 origin-center transition-transform">
+            <div className="flex items-center gap-1 sm:gap-3">
+              <div className="flex gap-1"><FlipCard digit={time.hours[0]} animationClass={currentTheme.animationClass} /><FlipCard digit={time.hours[1]} animationClass={currentTheme.animationClass} /></div>
+              <div className="flex flex-col gap-2"><div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" /><div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" /></div>
+              <div className="flex gap-1"><FlipCard digit={time.minutes[0]} animationClass={currentTheme.animationClass} /><FlipCard digit={time.minutes[1]} animationClass={currentTheme.animationClass} /></div>
+              <div className="flex flex-col gap-2"><div className="w-1.5 h-1.5 bg-white/40 rounded-full" /><div className="w-1.5 h-1.5 bg-white/40 rounded-full" /></div>
+              <div className="flex gap-1 opacity-80 scale-90 sm:scale-100"><FlipCard digit={time.seconds[0]} animationClass={currentTheme.animationClass} isSeconds /><FlipCard digit={time.seconds[1]} animationClass={currentTheme.animationClass} isSeconds /></div>
             </div>
+            <div className="mt-4 text-white font-display text-xl tracking-tighter opacity-60">{time.ampm}</div>
+          </div>
 
-            {/* CHAT AREA - Flexible container */}
-            <div className={`
-                w-full max-w-xl xl:w-[500px] 
-                order-2 px-2 sm:px-0 
-                transition-opacity duration-1000 
-                ${isIdle ? 'opacity-0 pointer-events-none' : 'opacity-100'} 
-                ${isAlarmRinging ? 'z-[101] relative' : 'relative'}
-            `}>
-                 <ChatWidget 
-                    theme={currentTheme} 
-                    onCharacterSwitch={(newId) => setThemeId(newId)}
-                    onSetAlarm={handleSetAlarm}
-                    onStopAlarm={stopAlarm}
-                 />
-            </div>
+          <div className="w-full max-w-md lg:max-w-lg">
+            <ChatWidget 
+              theme={currentTheme} 
+              onCharacterSwitch={setThemeId} 
+              onSetAlarm={(t) => setAlarm({ id: '1', time: t!, soundType: 'digital', isActive: true })} 
+              onStopAlarm={() => { setIsAlarmRinging(false); stopAllSounds(); }} 
+            />
+          </div>
         </div>
-
-        <footer className={`w-full text-center p-4 mt-auto text-white/40 text-xs sm:text-sm font-sans tracking-wide transition-opacity duration-1000 ${isIdle ? 'opacity-0' : 'opacity-100'}`}>
-          © 2026 Spider-Man Flip Clock
-        </footer>
       </div>
 
-      <AddCharacterModal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        onGenerate={handleGenerateCharacter}
-      />
+      <AddCharacterModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onGenerate={async (n) => {
+        const nt = await generateNewCharacterTheme(n);
+        if (nt) { setThemes(prev => ({...prev, [nt.id]: nt})); setThemeId(nt.id); }
+      }} />
     </div>
   );
 };

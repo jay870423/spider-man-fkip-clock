@@ -2,6 +2,7 @@
   "name": "spider-man-fkip-clock",
   "description": "A visually stunning Spiderman themed flip clock featuring dynamic character personalities, immersive biomes, and AI-generated daily wisdom.",
   "requestFramePermissions": [
-    "geolocation"
+    "geolocation",
+    "microphone"
   ]
 }
