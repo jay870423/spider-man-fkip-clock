@@ -1,6 +1,6 @@
 
-import { GoogleGenAI, Chat, FunctionDeclaration, Type, GenerateContentResponse, Part, Modality, LiveServerMessage } from "@google/genai";
-import { ThemeConfig, StreamUpdate, AIProvider, MoodType } from "../types";
+import { GoogleGenAI, Chat, Type, Part, Modality } from "@google/genai";
+import { ThemeConfig, StreamUpdate, MoodType } from "../types";
 import { decodeAudio } from "../utils/audioUtils";
 
 let ai: GoogleGenAI | null = null;
@@ -13,8 +13,6 @@ const getAiClient = () => {
   }
   return ai;
 };
-
-// ... (existing tools and sendMessageToCharacterStream logic) ...
 
 /**
  * 生成基于角色的个性化唤醒语音
@@ -49,10 +47,10 @@ export async function generatePersonalizedAlarmVoice(theme: ThemeConfig): Promis
   }
 }
 
-// ... (rest of the file) ...
 export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMessage: string): AsyncGenerator<StreamUpdate, void, unknown> {
     const client = getAiClient();
     if (!client) { yield { textChunk: "API Key Error", isComplete: true }; return; }
+    
     if (!chatSession || currentThemeId !== theme.id) {
       currentThemeId = theme.id;
       chatSession = client.chats.create({
@@ -79,7 +77,7 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
         },
       });
     }
-    // ... logic same as before ...
+
     try {
         let resultStream = await chatSession.sendMessageStream({ message: userMessage });
         let fullText = "";
@@ -88,6 +86,7 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
           if (chunk.text) { fullText += chunk.text; yield { textChunk: chunk.text, fullText }; }
           if (chunk.functionCalls) functionCalls.push(...chunk.functionCalls);
         }
+
         if (functionCalls.length > 0) {
           const toolResponses: Part[] = [];
           for (const call of functionCalls) {
@@ -95,9 +94,9 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
             if (call.name === "generateImage") {
                 const response = await client.models.generateContent({
                     model: 'gemini-2.5-flash-image',
-                    contents: [{ parts: [{ text: call.args.prompt }] }],
+                    contents: [{ parts: [{ text: call.args.prompt as string }] }],
                 });
-                const part = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
+                const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
                 const img = part?.inlineData ? `data:${part.inlineData.mimeType};base64,${part.inlineData.data}` : null;
                 if (img) yield { generatedImageUrl: img };
                 resultData = { result: img ? "Image displayed" : "Failed" };
@@ -105,7 +104,7 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
                 yield { moodMusic: call.args.mood as MoodType };
                 resultData = { result: `Playing ${call.args.mood} music` };
             } else if (call.name === "setAlarm") {
-                yield { alarmConfig: { time: call.args.time } };
+                yield { alarmConfig: { time: call.args.time as string } };
                 resultData = { result: "Alarm set" };
             }
             toolResponses.push({ functionResponse: { name: call.name, response: resultData, id: call.id } });
@@ -130,14 +129,38 @@ export const connectLiveVoice = async (theme: ThemeConfig, callbacks: any) => {
       }
     });
 };
+
 export function resetChatSession() { chatSession = null; currentThemeId = null; }
+
 export async function generateNewCharacterTheme(name: string): Promise<ThemeConfig | null> {
     const client = getAiClient();
     if (!client) return null;
-    const response = await client.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Create Zootopia persona for: ${name}. Return JSON.`,
-        config: { responseMimeType: "application/json", responseSchema: { type: Type.OBJECT, properties: { role: { type: Type.STRING }, primaryColor: { type: Type.STRING }, secondaryColor: { type: Type.STRING }, accentColor: { type: Type.STRING }, bgGradient: { type: Type.STRING }, animationClass: { type: Type.STRING }, quotePrompt: { type: Type.STRING }, emoji: { type: Type.STRING } }, required: ["role", "primaryColor", "secondaryColor", "accentColor", "bgGradient", "animationClass", "quotePrompt", "emoji"] } }
-    });
-    return response.text ? { id: name + Date.now(), name, avatarUrl: `https://picsum.photos/seed/${name}/200`, ...JSON.parse(response.text) } : null;
+    try {
+        const response = await client.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: `Create Zootopia persona for: ${name}. Return JSON.`,
+            config: { 
+                responseMimeType: "application/json", 
+                responseSchema: { 
+                    type: Type.OBJECT, 
+                    properties: { 
+                        role: { type: Type.STRING }, 
+                        primaryColor: { type: Type.STRING }, 
+                        secondaryColor: { type: Type.STRING }, 
+                        accentColor: { type: Type.STRING }, 
+                        bgGradient: { type: Type.STRING }, 
+                        animationClass: { type: Type.STRING }, 
+                        quotePrompt: { type: Type.STRING }, 
+                        emoji: { type: Type.STRING } 
+                    }, 
+                    required: ["role", "primaryColor", "secondaryColor", "accentColor", "bgGradient", "animationClass", "quotePrompt", "emoji"] 
+                } 
+            }
+        });
+        const text = response.text;
+        return text ? { id: name + Date.now(), name, avatarUrl: `https://picsum.photos/seed/${name}/200`, ...JSON.parse(text) } : null;
+    } catch (e) {
+        console.error("Generate Theme Error", e);
+        return null;
+    }
 }

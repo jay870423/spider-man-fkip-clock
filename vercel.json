@@ -1,0 +1,9 @@
+
+{
+  "rewrites": [
+    {
+      "source": "/v1beta/(.*)",
+      "destination": "https://generativelanguage.googleapis.com/v1beta/$1"
+    }
+  ]
+}

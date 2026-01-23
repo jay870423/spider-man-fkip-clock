@@ -1,9 +1,10 @@
 
-import React, { useState, useRef, useEffect } from 'react';
-import { ThemeConfig, ChatMessage, CharacterId, AIProvider, MoodType } from '../types';
-import { sendMessageToCharacterStream, resetChatSession, connectLiveVoice } from '../services/geminiService';
+import { ThemeConfig, ChatMessage, CharacterId, MoodType } from '../types';
+import { sendMessageToCharacterStream, connectLiveVoice } from '../services/geminiService';
 import { playMoodBackground, stopAmbientMusic } from '../utils/soundUtils';
 import { decodeAudio, decodeAudioData, float32ToInt16Blob } from '../utils/audioUtils';
+import { LiveServerMessage, FunctionCall } from '@google/genai';
+import React, { useState, useRef, useEffect } from 'react';
 
 interface Props {
   theme: ThemeConfig;
@@ -36,7 +37,7 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
     setMessages([
       { role: 'model', text: `Hi! I'm ${theme.name}. Let's chat about your day or set some goals!` }
     ]);
-    stopVoiceChat(); // Close voice if theme changes
+    stopVoiceChat();
   }, [theme.id, theme.name]);
 
   useEffect(() => {
@@ -58,7 +59,7 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
       liveSession.current.close();
       liveSession.current = null;
     }
-    audioSources.current.forEach(s => s.stop());
+    audioSources.current.forEach(s => { try { s.stop(); } catch(e){} });
     audioSources.current.clear();
     setIsVoiceActive(false);
   };
@@ -75,7 +76,7 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const session = await connectLiveVoice(theme, {
-        onMessage: async (message) => {
+        onMessage: async (message: LiveServerMessage) => {
           const audioBase64 = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
           if (audioBase64) {
             const ctx = audioContexts.current!.output;
@@ -91,21 +92,20 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
           }
           
           if (message.serverContent?.interrupted) {
-            audioSources.current.forEach(s => s.stop());
+            audioSources.current.forEach(s => { try { s.stop(); } catch(e){} });
             audioSources.current.clear();
             nextStartTime.current = 0;
           }
 
           if (message.toolCall) {
-            // Basic handling for tool calls in voice mode
-            message.toolCall.functionCalls.forEach(fc => {
-                if (fc.name === 'playMusic') onSetAlarm(); // Just an example mapping
+            message.toolCall.functionCalls.forEach((fc: FunctionCall) => {
+                if (fc.name === 'playMusic') onSetAlarm();
                 session.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { result: "ok" } } });
             });
           }
         },
         onClose: () => stopVoiceChat(),
-        onError: (e) => {
+        onError: (e: any) => {
           console.error("Live Voice Error:", e);
           stopVoiceChat();
         }
@@ -183,6 +183,11 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
       }
     } catch (err) {
       console.error(err);
+      setMessages(prev => {
+        const newHistory = [...prev];
+        newHistory[newHistory.length - 1] = { role: 'model', text: "Connection error. Please check your network." };
+        return newHistory;
+      });
     } finally {
       setIsLoading(false);
     }
@@ -191,8 +196,6 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
   return (
     <div className="relative w-full z-40">
       <div className={`relative flex flex-col w-full h-[55vh] max-h-[600px] rounded-[2rem] ${theme.primaryColor} bg-opacity-30 backdrop-blur-xl border border-white/20 shadow-2xl overflow-hidden`}>
-        
-        {/* Header */}
         <div className="px-6 py-4 flex items-center justify-between border-b border-white/10 bg-black/10">
              <div className="flex items-center gap-3">
                  <div className="w-10 h-10 rounded-full border-2 border-white/60 overflow-hidden shrink-0">
@@ -224,7 +227,6 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
              </div>
         </div>
 
-        {/* Messages */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {isVoiceActive && (
             <div className="flex flex-col items-center justify-center h-full space-y-6">
@@ -259,7 +261,6 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input */}
         <div className="p-4 bg-gradient-to-t from-black/40 to-transparent">
             <form onSubmit={handleSubmit} className="relative">
                 <input 
