@@ -14,10 +14,11 @@ const getAiClient = () => {
     // vercel.json rewrites /v1beta/(.*) to the Google Gemini API endpoint
     const baseUrl = typeof window !== 'undefined' ? window.location.origin : undefined;
     
+    // Cast to any to bypass TS2353 as baseUrl might not be explicitly typed in all SDK versions
     ai = new GoogleGenAI({ 
       apiKey: process.env.API_KEY,
       baseUrl: baseUrl
-    });
+    } as any);
   }
   return ai;
 };

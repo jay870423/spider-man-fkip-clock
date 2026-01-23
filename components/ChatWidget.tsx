@@ -88,7 +88,7 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
             source.addEventListener('ended', () => audioSources.current.delete(source));
             source.start(nextStartTime.current);
             nextStartTime.current += buffer.duration;
-            audioSources.add(source);
+            audioSources.current.add(source); // Fixed: Added .current
           }
           
           if (message.serverContent?.interrupted) {
@@ -97,7 +97,6 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
             nextStartTime.current = 0;
           }
 
-          // Safety fix for TS18048: Check for toolCall and functionCalls before iterating
           if (message.toolCall?.functionCalls) {
             message.toolCall.functionCalls.forEach((fc: FunctionCall) => {
                 if (fc.name === 'playMusic') onSetAlarm();
