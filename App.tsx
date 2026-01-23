@@ -6,6 +6,7 @@ import { FlipCard } from './components/FlipCard';
 import { CharacterSelector } from './components/CharacterSelector';
 import { ChatWidget } from './components/ChatWidget';
 import { AddCharacterModal } from './components/AddCharacterModal';
+import { SettingsModal } from './components/SettingsModal';
 import { Spiderman } from './components/Spiderman';
 import { AlarmOverlay } from './components/AlarmOverlay';
 import { generateNewCharacterTheme, generatePersonalizedAlarmVoice } from './services/geminiService';
@@ -30,6 +31,14 @@ const App: React.FC = () => {
   const [isAlarmRinging, setIsAlarmRinging] = useState(false);
   const audioContext = useRef<AudioContext | null>(null);
 
+  // Screensaver & UI States
+  const [isIdle, setIsIdle] = useState(false);
+  const [autoScreensaver, setAutoScreensaver] = useState(true);
+  const [idleDelay, setIdleDelay] = useState(10); // seconds
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const idleTimerRef = useRef<number | null>(null);
+
   const [time, setTime] = useState<TimeState>(() => {
     const now = new Date();
     let hours = now.getHours();
@@ -47,11 +56,45 @@ const App: React.FC = () => {
   const [weather, setWeather] = useState<{temp: number, code: number, city: string} | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
   
   const currentTheme = themes[themeId] || themes[Object.keys(themes)[0]];
 
-  // 触发闹钟
+  // Idle Detection
+  useEffect(() => {
+    if (!autoScreensaver) {
+      setIsIdle(false);
+      return;
+    }
+
+    const resetTimer = () => {
+      setIsIdle(false);
+      if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = window.setTimeout(() => {
+        if (!isAlarmRinging && !isSettingsOpen && !isModalOpen) {
+          setIsIdle(true);
+        }
+      }, idleDelay * 1000);
+    };
+
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+    events.forEach(name => document.addEventListener(name, resetTimer));
+    resetTimer();
+
+    return () => {
+      events.forEach(name => document.removeEventListener(name, resetTimer));
+      if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
+    };
+  }, [autoScreensaver, idleDelay, isAlarmRinging, isSettingsOpen, isModalOpen]);
+
+  // Fullscreen Toggle
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(e => console.error(e));
+    } else {
+      if (document.exitFullscreen) document.exitFullscreen();
+    }
+  };
+
   const triggerAlarm = async () => {
     setIsAlarmRinging(true);
     const hour = new Date().getHours();
@@ -106,11 +149,8 @@ const App: React.FC = () => {
             const { latitude, longitude } = pos.coords;
             const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code`);
             const data = await res.json();
-            
-            // 尝试获取地理位置
             const cityRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=zh`);
             const cityData = await cityRes.json();
-            
             setWeather({ 
               temp: Math.round(data.current.temperature_2m), 
               code: data.current.weather_code, 
@@ -118,21 +158,17 @@ const App: React.FC = () => {
             });
             setLocationError(null);
           } catch (err) {
-            console.error("Weather fetch error:", err);
             setLocationError("天气更新失败");
           } finally {
             setIsLocating(false);
           }
         },
-        (err) => {
-          console.warn("Geolocation denied/error:", err);
+        () => {
           setIsLocating(false);
           setLocationError("无法获取定位");
         },
         { timeout: 10000 }
       );
-    } else {
-      setLocationError("浏览器不支持定位");
     }
   }, []);
 
@@ -140,9 +176,27 @@ const App: React.FC = () => {
     <div className={`min-h-screen w-full bg-gradient-to-br ${currentTheme.bgGradient} transition-colors duration-1000 flex flex-col items-center overflow-x-hidden relative`}>
       <Spiderman />
       
+      {/* Top Right Action Bar */}
+      <div className={`fixed top-4 right-4 z-[70] flex gap-3 transition-opacity duration-500 ${isIdle ? 'opacity-20 hover:opacity-100' : 'opacity-100'}`}>
+        <button 
+          onClick={toggleFullscreen}
+          className="w-10 h-10 rounded-full bg-black/30 backdrop-blur-md border border-white/20 flex items-center justify-center text-white/80 hover:bg-white/10 transition-all shadow-xl"
+          title="Toggle Fullscreen"
+        >
+          ⤢
+        </button>
+        <button 
+          onClick={() => setIsSettingsOpen(true)}
+          className="w-10 h-10 rounded-full bg-black/30 backdrop-blur-md border border-white/20 flex items-center justify-center text-white/80 hover:bg-white/10 transition-all shadow-xl"
+          title="Screensaver Settings"
+        >
+          ⚙️
+        </button>
+      </div>
+
       {isAlarmRinging && <AlarmOverlay time={time.hours + ":" + time.minutes} characterName={currentTheme.name} onStop={() => { setIsAlarmRinging(false); stopAllSounds(); }} />}
 
-      <div className="z-10 w-full max-w-7xl flex flex-col items-center px-4 py-4 sm:py-8">
+      <div className={`z-10 w-full max-w-7xl flex flex-col items-center px-4 py-4 sm:py-8 transition-all duration-1000 ${isIdle ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'}`}>
         <header className="w-full flex flex-col items-center mb-6 sm:mb-10">
           <h1 className="text-white font-display text-2xl sm:text-4xl tracking-widest mb-4 opacity-90">ZOOTOPIA FLIP</h1>
           
@@ -150,7 +204,6 @@ const App: React.FC = () => {
             <span className="flex items-center gap-1.5 border-r border-white/10 pr-3">
               📅 {dateString}
             </span>
-            
             <div className="flex items-center gap-2 min-w-[120px] justify-center">
               {isLocating ? (
                 <div className="flex items-center gap-2 animate-pulse text-white/60">
@@ -175,6 +228,7 @@ const App: React.FC = () => {
         </header>
 
         <div className="w-full flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-16">
+          {/* Flip Clock remains visible even in idle but will be part of the central layout */}
           <div className="flex flex-col items-center scale-90 sm:scale-100 lg:scale-110 origin-center transition-transform">
             <div className="flex items-center gap-1 sm:gap-3">
               <div className="flex gap-1"><FlipCard digit={time.hours[0]} animationClass={currentTheme.animationClass} /><FlipCard digit={time.hours[1]} animationClass={currentTheme.animationClass} /></div>
@@ -197,10 +251,31 @@ const App: React.FC = () => {
         </div>
       </div>
 
+      {/* Screensaver Content (Visible only when idle) */}
+      <div className={`fixed inset-0 z-0 flex items-center justify-center transition-opacity duration-1000 ${isIdle ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+          <div className="flex flex-col items-center scale-110 sm:scale-125 lg:scale-[1.8] origin-center">
+            <div className="flex items-center gap-1 sm:gap-3">
+              <div className="flex gap-1"><FlipCard digit={time.hours[0]} animationClass={currentTheme.animationClass} /><FlipCard digit={time.hours[1]} animationClass={currentTheme.animationClass} /></div>
+              <div className="flex flex-col gap-2"><div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" /><div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" /></div>
+              <div className="flex gap-1"><FlipCard digit={time.minutes[0]} animationClass={currentTheme.animationClass} /><FlipCard digit={time.minutes[1]} animationClass={currentTheme.animationClass} /></div>
+            </div>
+            <div className="mt-12 text-white font-display text-2xl tracking-widest opacity-30 animate-pulse">{dateString}</div>
+          </div>
+      </div>
+
       <AddCharacterModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onGenerate={async (n) => {
         const nt = await generateNewCharacterTheme(n);
         if (nt) { setThemes(prev => ({...prev, [nt.id]: nt})); setThemeId(nt.id); }
       }} />
+
+      <SettingsModal 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)} 
+        autoScreensaver={autoScreensaver}
+        setAutoScreensaver={setAutoScreensaver}
+        idleDelay={idleDelay}
+        setIdleDelay={setIdleDelay}
+      />
     </div>
   );
 };

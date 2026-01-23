@@ -9,16 +9,19 @@ let currentThemeId: string | null = null;
 
 const getAiClient = () => {
   if (!ai && process.env.API_KEY) {
-    // For China accessibility: 
-    // We use the local origin as baseUrl so requests are proxied via Vercel Rewrites
-    // vercel.json rewrites /v1beta/(.*) to the Google Gemini API endpoint
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin : undefined;
+    // 针对中国区访问优化：
+    // 1. 优先使用自定义代理地址（如果配置了环境变量 GEMINI_PROXY_URL）
+    // 2. 否则使用当前 Origin，通过 Vercel Rewrites 代理 REST 请求
+    const customProxy = (process.env as any).GEMINI_PROXY_URL;
+    const baseUrl = customProxy || (typeof window !== 'undefined' ? window.location.origin : undefined);
     
-    // Cast to any to bypass TS2353 as baseUrl might not be explicitly typed in all SDK versions
-    ai = new GoogleGenAI({ 
+    // 使用 any 绕过 TS2353 编译错误
+    const options: any = { 
       apiKey: process.env.API_KEY,
       baseUrl: baseUrl
-    } as any);
+    };
+    
+    ai = new GoogleGenAI(options);
   }
   return ai;
 };
@@ -58,7 +61,7 @@ export async function generatePersonalizedAlarmVoice(theme: ThemeConfig): Promis
 
 export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMessage: string): AsyncGenerator<StreamUpdate, void, unknown> {
     const client = getAiClient();
-    if (!client) { yield { textChunk: "API Key Error", isComplete: true }; return; }
+    if (!client) { yield { textChunk: "API Key Missing. Check Vercel Env.", isComplete: true }; return; }
     
     if (!chatSession || currentThemeId !== theme.id) {
       currentThemeId = theme.id;
@@ -122,12 +125,19 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
           for await (const chunk of secondTurn) { if (chunk.text) { fullText += chunk.text; yield { textChunk: chunk.text, fullText }; } }
         }
         yield { isComplete: true, fullText };
-    } catch (e) { yield { textChunk: "Connection lost...", isComplete: true }; }
+    } catch (e) { 
+      console.error("Gemini Error:", e);
+      yield { textChunk: "Connection lost... Please ensure you are not blocked by GFW or Vercel Proxy is active.", isComplete: true }; 
+    }
 }
 
 export const connectLiveVoice = async (theme: ThemeConfig, callbacks: any) => {
     const client = getAiClient();
     if (!client) throw new Error("API Key missing");
+    
+    // 注意：Vercel Rewrites 不支持 WebSocket (WSS)。
+    // 如果在中国使用语音聊天，必须在 Vercel 环境变量中配置 GEMINI_PROXY_URL
+    // 指向一个支持 WSS 的反向代理地址。
     return client.live.connect({
       model: 'gemini-2.5-flash-native-audio-preview-12-2025',
       callbacks,

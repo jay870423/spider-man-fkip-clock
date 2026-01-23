@@ -56,7 +56,9 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
 
   const stopVoiceChat = () => {
     if (liveSession.current) {
-      liveSession.current.close();
+      try {
+        liveSession.current.close();
+      } catch (e) {}
       liveSession.current = null;
     }
     audioSources.current.forEach(s => { try { s.stop(); } catch(e){} });
@@ -97,6 +99,7 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
             nextStartTime.current = 0;
           }
 
+          // Safety check for functionCalls (Fixes TS18048)
           if (message.toolCall?.functionCalls) {
             message.toolCall.functionCalls.forEach((fc: FunctionCall) => {
                 if (fc.name === 'playMusic') onSetAlarm();
@@ -105,8 +108,9 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
           }
         },
         onClose: () => stopVoiceChat(),
-        onError: (e: any) => {
+        onerror: (e: any) => {
           console.error("Live Voice Error:", e);
+          alert("实时语音连接失败。可能是因为 Vercel Rewrite 不支持 WebSockets，请尝试在控制台配置 GEMINI_PROXY_URL 指向支持 WSS 的代理。");
           stopVoiceChat();
         }
       });
@@ -118,7 +122,9 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
       scriptProcessor.onaudioprocess = (e) => {
         const inputData = e.inputBuffer.getChannelData(0);
         const data = float32ToInt16Blob(inputData);
-        session.sendRealtimeInput({ media: { data, mimeType: 'audio/pcm;rate=16000' } });
+        if (liveSession.current) {
+          session.sendRealtimeInput({ media: { data, mimeType: 'audio/pcm;rate=16000' } });
+        }
       };
       source.connect(scriptProcessor);
       scriptProcessor.connect(audioContexts.current.input.destination);
@@ -185,7 +191,7 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
       console.error(err);
       setMessages(prev => {
         const newHistory = [...prev];
-        newHistory[newHistory.length - 1] = { role: 'model', text: "Connection error. Please check your network." };
+        newHistory[newHistory.length - 1] = { role: 'model', text: "Connection error. Please check your network. If you are in China, ensure API_KEY is set in Vercel environment." };
         return newHistory;
       });
     } finally {
@@ -242,6 +248,7 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
                         <div className="w-1 h-6 bg-white rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
                     </div>
                 </div>
+                <button onClick={stopVoiceChat} className="px-6 py-2 bg-red-500/20 hover:bg-red-500/40 text-red-300 rounded-full text-xs uppercase tracking-widest transition-all">Cancel Voice</button>
             </div>
           )}
           
