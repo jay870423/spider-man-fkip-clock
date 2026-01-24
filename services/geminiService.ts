@@ -68,21 +68,21 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
           1. COMPANIONSHIP: Be friendly, witty, and engaging.
           2. LANGUAGE: Detect user language. Reply in the SAME language (Simplified Chinese for Chinese users).
           3. MUSIC PLATFORMS: 
-             - If user is CHINESE: Suggest music from QQ Music (y.qq.com), Baidu Music (play.taihe.com), or Kugou (kugou.com).
+             - If user is CHINESE: Suggest music from Baidu Music (play.taihe.com), QQ Music (y.qq.com), or Kugou (kugou.com).
              - If user is INTERNATIONAL: Suggest music from YouTube or Spotify.
           4. TOOL USE: Use 'provideMusic' to suggest songs and 'setAlarm' for clocks.
-          5. CONCISENESS: Do not repeat your reasoning after using a tool. Simply confirm or provide the requested information.`,
+          5. NO REPETITION: Do NOT output your internal reasoning or say "I will now use the tool...". Execute the tool immediately. If you suggest a song, do not describe it twice. Give a brief, catchy intro once.`,
           tools: [{ functionDeclarations: [
             {
                 name: "provideMusic",
-                description: "Suggest a real song. Use Chinese platforms for Chinese users.",
+                description: "Suggest a real song. Use Chinese platforms (Baidu/QQ) for Chinese users.",
                 parameters: { 
                   type: Type.OBJECT, 
                   properties: { 
                     title: { type: Type.STRING },
                     artist: { type: Type.STRING },
                     mood: { type: Type.STRING, enum: ["neutral", "calm", "cheerful", "focus", "supportive"] },
-                    externalUrl: { type: Type.STRING, description: "Direct link to the song." }
+                    externalUrl: { type: Type.STRING, description: "Direct link to the song or platform search." }
                   }, 
                   required: ["title", "artist", "mood"] 
                 }
@@ -108,7 +108,10 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
         let functionCalls: any[] = [];
         
         for await (const chunk of resultStream) {
-          if (chunk.text) { yield { textChunk: chunk.text }; }
+          // Filter out redundant "thinking" text often outputted before tool calls
+          if (chunk.text && !chunk.text.includes('provideMusic') && !chunk.text.includes('setAlarm')) { 
+            yield { textChunk: chunk.text }; 
+          }
           if (chunk.functionCalls) { functionCalls.push(...chunk.functionCalls); }
         }
 
@@ -124,8 +127,9 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
                 
                 let fallbackUrl = "";
                 if (isChineseRequest) {
-                  // Prioritize Baidu/QQ/Kugou search for Chinese users
-                  fallbackUrl = `https://www.baidu.com/s?wd=${encodeURIComponent(title + ' ' + artist + ' 音乐')}`;
+                  // Prioritize Baidu Music (Taihe) or QQ Music
+                  const query = encodeURIComponent(title + ' ' + artist);
+                  fallbackUrl = `https://play.taihe.com/search?key=${query}`;
                 } else {
                   fallbackUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + artist)}`;
                 }
@@ -142,6 +146,7 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
             toolResponses.push({ functionResponse: { name: call.name, response: resultData, id: call.id } });
           }
           
+          // Second turn to acknowledge tool execution
           const secondTurn = await chatSession.sendMessageStream({ message: toolResponses });
           for await (const chunk of secondTurn) { 
             if (chunk.text) { yield { textChunk: chunk.text }; } 
@@ -149,7 +154,7 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
         }
     } catch (e: any) { 
       console.error("Gemini Error:", e);
-      yield { textChunk: `\n⚠️ 连接超时，请稍后重试。`, isComplete: true }; 
+      yield { textChunk: `\n⚠️ 连接中...`, isComplete: true }; 
     }
 }
 
