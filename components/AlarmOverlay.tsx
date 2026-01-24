@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 interface Props {
@@ -8,7 +9,7 @@ interface Props {
 
 export const AlarmOverlay: React.FC<Props> = ({ time, onStop, characterName }) => {
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/80 backdrop-blur-xl transition-all animate-pulse-slow">
+    <div className="fixed inset-0 z-[4000] flex flex-col items-center justify-center bg-black/80 backdrop-blur-xl transition-all animate-pulse-slow">
       {/* Background Red Flash Animation Layer */}
       <div className="absolute inset-0 bg-red-600/20 animate-pulse pointer-events-none"></div>
 

@@ -64,12 +64,19 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const resetTimer = () => {
+      // If we are currently ringing an alarm or a modal is open, don't trigger screensaver
+      if (isAlarmRinging || isSettingsOpen || isModalOpen) {
+        if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
+        return;
+      }
+
       setIsIdle(false);
       if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
-      if (autoScreensaver && !isAlarmRinging && !isSettingsOpen && !isModalOpen) {
+      if (autoScreensaver) {
         idleTimerRef.current = window.setTimeout(() => setIsIdle(true), idleDelay * 1000);
       }
     };
+
     const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
     events.forEach(n => document.addEventListener(n, resetTimer));
     resetTimer();
@@ -120,14 +127,15 @@ const App: React.FC = () => {
   }, []);
 
   return (
-    <div className={`min-h-[100dvh] w-full bg-gradient-to-br ${currentTheme.bgGradient} transition-colors duration-1000 flex flex-col items-center overflow-x-hidden font-sans relative pb-10 select-none`}>
-      {/* Background Physics Layer */}
-      <div className={`transition-opacity duration-1000 ${isIdle ? 'opacity-0' : 'opacity-100'}`}>
+    <div className={`min-h-[100dvh] w-full bg-gradient-to-br ${currentTheme.bgGradient} transition-colors duration-1000 flex flex-col items-center overflow-x-hidden font-sans relative pb-10`}>
+      
+      {/* 1. Background Physics Layer (Lower z-index) */}
+      <div className={`fixed inset-0 transition-opacity duration-1000 ${isIdle ? 'opacity-0' : 'opacity-100'}`} style={{ zIndex: 50 }}>
         <Spiderman />
       </div>
       
-      {/* Fixed UI Header */}
-      <div className={`w-full z-[100] p-4 flex justify-between items-start transition-opacity duration-700 sticky top-0 ${isIdle ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+      {/* 2. Fixed UI Header (High z-index) */}
+      <header className={`fixed top-0 left-0 w-full z-[1000] p-4 flex justify-between items-start transition-opacity duration-700 ${isIdle ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
         <div className="flex flex-col gap-1 bg-black/50 backdrop-blur-xl rounded-2xl px-4 py-2 border border-white/20 shadow-2xl">
            <div className="flex items-center gap-3 text-white text-[10px] sm:text-xs font-bold tracking-widest uppercase">
               <span className="opacity-80">📅 {dateString}</span>
@@ -138,33 +146,33 @@ const App: React.FC = () => {
         
         <div className="flex gap-2">
             <button 
-              onClick={() => setIsIdle(true)} 
-              className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-xl hover:bg-white/20 transition-all"
+              onClick={(e) => { e.stopPropagation(); setIsIdle(true); }} 
+              className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-xl hover:bg-white/20 active:scale-95 transition-all cursor-pointer pointer-events-auto"
               title="Screensaver"
             >
               🌙
             </button>
             <button 
-              onClick={toggleFullscreen} 
-              className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-xl hover:bg-white/20 transition-all"
+              onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }} 
+              className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-xl hover:bg-white/20 active:scale-95 transition-all cursor-pointer pointer-events-auto"
               title="Fullscreen"
             >
               {isFullscreen ? '⤫' : '⤢'}
             </button>
             <button 
-              onClick={() => setIsSettingsOpen(true)} 
-              className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-xl hover:bg-white/20 transition-all"
+              onClick={(e) => { e.stopPropagation(); setIsSettingsOpen(true); }} 
+              className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-xl hover:bg-white/20 active:scale-95 transition-all cursor-pointer pointer-events-auto"
               title="Settings"
             >
               ⚙️
             </button>
         </div>
-      </div>
+      </header>
 
-      {/* Main Flowing Content */}
-      <main className={`flex-1 w-full max-w-4xl flex flex-col items-center justify-start gap-8 sm:gap-12 px-4 mt-2 transition-all duration-1000 ${isIdle ? 'opacity-0 scale-95 blur-xl pointer-events-none' : 'opacity-100 scale-100'}`}>
+      {/* 3. Main Flowing Content (Medium z-index) */}
+      <main className={`flex-1 w-full max-w-4xl flex flex-col items-center justify-start gap-8 sm:gap-12 px-4 pt-20 sm:pt-24 pb-10 transition-all duration-1000 ${isIdle ? 'opacity-0 scale-95 blur-xl pointer-events-none' : 'opacity-100 scale-100'}`} style={{ zIndex: 100 }}>
         
-        <div className="w-full relative z-[90]">
+        <div className="w-full relative">
           <CharacterSelector currentThemeId={themeId} themes={themes} onSelect={setThemeId} onAddClick={() => setIsModalOpen(true)} />
         </div>
 
@@ -198,23 +206,21 @@ const App: React.FC = () => {
             <div className="mt-8 text-white/30 font-display text-xl tracking-[0.5em] uppercase">{time.ampm}</div>
         </div>
 
-        <div className="w-full max-w-xl pb-10 relative z-[80]">
+        <div className="w-full max-w-xl pb-10">
           <ChatWidget theme={currentTheme} onCharacterSwitch={setThemeId} onSetAlarm={(t) => setAlarm({ id: '1', time: t!, soundType: 'digital', isActive: true })} onStopAlarm={() => { setIsAlarmRinging(false); stopAllSounds(); }} />
         </div>
       </main>
 
-      {/* Aesthetic Screensaver Overlay - Mobile Optimized */}
+      {/* 4. Screensaver Overlay (Highest z-index when active) */}
       <div 
-        className={`fixed inset-0 z-[150] flex flex-col items-center justify-center transition-all duration-1000 bg-black/95 pointer-events-auto ${isIdle ? 'opacity-100 scale-100' : 'opacity-0 scale-110 pointer-events-none'}`}
+        className={`fixed inset-0 z-[3000] flex flex-col items-center justify-center transition-all duration-1000 bg-black/95 ${isIdle ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-110 pointer-events-none'}`}
         onClick={() => setIsIdle(false)}
       >
-          {/* Subtle Character Background Element */}
-          <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] grayscale pointer-events-none overflow-hidden select-none">
+          <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] grayscale pointer-events-none overflow-hidden">
              <img src={currentTheme.avatarUrl} alt="" className="w-[120%] h-[120%] object-contain" />
           </div>
 
-          <div className="flex flex-col items-center gap-6 sm:gap-16 scale-[0.9] xs:scale-100 sm:scale-[1.3] md:scale-[1.6] drop-shadow-[0_30px_100px_rgba(255,255,255,0.05)] transition-transform duration-1000">
-            {/* Primary Time HH:MM */}
+          <div className="flex flex-col items-center gap-6 sm:gap-16 scale-[0.8] xs:scale-0.9 sm:scale-[1.3] md:scale-[1.6] drop-shadow-[0_30px_100px_rgba(255,255,255,0.05)] transition-transform duration-1000">
             <div className="flex items-center gap-3 sm:gap-12">
               <div className="flex gap-2">
                 <FlipCard digit={time.hours[0]} animationClass={currentTheme.animationClass} />
@@ -230,7 +236,6 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {/* AM/PM and Seconds Row */}
             <div className="flex items-center gap-6">
               <div className="text-white/20 font-display text-2xl sm:text-4xl tracking-widest uppercase">{time.ampm}</div>
               <div className="w-px h-8 sm:h-12 bg-white/10" />
@@ -241,7 +246,6 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Interaction Instruction */}
           <div className="absolute bottom-10 text-white/10 text-[10px] sm:text-xs font-black tracking-[0.3em] uppercase animate-pulse">
              Tap anywhere to wake
           </div>

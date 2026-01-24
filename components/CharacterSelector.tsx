@@ -11,7 +11,7 @@ interface Props {
 
 export const CharacterSelector: React.FC<Props> = ({ currentThemeId, themes, onSelect, onAddClick }) => {
   return (
-    <div className="relative z-[110] w-full flex justify-center py-4">
+    <div className="relative z-[50] w-full flex justify-center py-4">
       <style>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
