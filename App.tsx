@@ -9,7 +9,6 @@ import { AddCharacterModal } from './components/AddCharacterModal';
 import { SettingsModal } from './components/SettingsModal';
 import { Spiderman } from './components/Spiderman';
 import { AlarmOverlay } from './components/AlarmOverlay';
-// Fixed: Removed missing export 'generatePersonalizedAlarmVoice'
 import { generateNewCharacterTheme } from './services/geminiService';
 import { playContextualVibe, stopAllSounds } from './utils/soundUtils';
 
@@ -98,58 +97,63 @@ const App: React.FC = () => {
         const data = await res.json();
         setWeather({ temp: Math.round(data.current.temperature_2m), code: data.current.weather_code, city: "当前位置" });
       } catch (e) {}
-    });
+    }, () => {}, { timeout: 5000 });
   }, []);
 
   return (
-    <div className={`fixed inset-0 w-full h-full bg-gradient-to-br ${currentTheme.bgGradient} transition-colors duration-1000 flex flex-col items-center overflow-hidden font-sans`}>
+    <div className={`min-h-screen w-full bg-gradient-to-br ${currentTheme.bgGradient} transition-colors duration-1000 flex flex-col items-center overflow-x-hidden overflow-y-auto font-sans relative pb-10`}>
       <Spiderman />
       
-      {/* Top Bar Navigation */}
-      <div className={`absolute top-0 w-full z-[80] p-4 flex justify-between items-start transition-opacity duration-700 ${isIdle ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-        <div className="flex flex-col gap-2 bg-black/20 backdrop-blur-md rounded-2xl px-4 py-2 border border-white/10 shadow-lg">
-           <div className="flex items-center gap-3 text-white text-xs font-bold tracking-widest">
-              <span className="opacity-60">📅 {dateString}</span>
-              <div className="w-px h-3 bg-white/20" />
+      {/* Top Bar Navigation - Improved visibility */}
+      <div className={`w-full z-[80] p-4 flex justify-between items-start transition-opacity duration-700 sticky top-0 ${isIdle ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+        <div className="flex flex-col gap-2 bg-black/40 backdrop-blur-xl rounded-2xl px-4 py-2 border border-white/20 shadow-2xl">
+           <div className="flex items-center gap-3 text-white text-[10px] sm:text-xs font-bold tracking-widest uppercase">
+              <span className="opacity-80">📅 {dateString}</span>
+              <div className="w-px h-3 bg-white/30" />
               <span>{weather ? `${getWeatherIcon(weather.code)} ${weather.temp}°C` : '🌤️ 载入中'}</span>
            </div>
         </div>
         
         <div className="flex gap-2">
-            <button onClick={toggleFullscreen} className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-lg active:scale-90 transition-transform">⤢</button>
-            <button onClick={() => setIsSettingsOpen(true)} className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-lg active:scale-90 transition-transform">⚙️</button>
+            <button onClick={toggleFullscreen} className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-xl hover:bg-white/20 transition-all">⤢</button>
+            <button onClick={() => setIsSettingsOpen(true)} className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-xl hover:bg-white/20 transition-all">⚙️</button>
         </div>
       </div>
 
       {/* Main Content Area */}
-      <main className={`flex-1 w-full flex flex-col items-center justify-center gap-6 px-4 pt-12 transition-all duration-1000 ${isIdle ? 'opacity-0 scale-90 blur-lg pointer-events-none' : 'opacity-100 scale-100 blur-0'}`}>
+      <main className={`flex-1 w-full max-w-4xl flex flex-col items-center justify-start gap-8 px-4 mt-4 transition-all duration-1000 ${isIdle ? 'opacity-0 scale-95 blur-xl pointer-events-none' : 'opacity-100 scale-100 blur-0'}`}>
         
-        <CharacterSelector currentThemeId={themeId} themes={themes} onSelect={setThemeId} onAddClick={() => setIsModalOpen(true)} />
-
-        <div className="flex flex-col items-center">
-            <div className="flex items-center gap-1 sm:gap-4 scale-75 sm:scale-100">
-              <div className="flex gap-1"><FlipCard digit={time.hours[0]} animationClass={currentTheme.animationClass} /><FlipCard digit={time.hours[1]} animationClass={currentTheme.animationClass} /></div>
-              <div className="flex flex-col gap-3 px-1"><div className="w-2 h-2 bg-white rounded-full animate-pulse" /><div className="w-2 h-2 bg-white rounded-full animate-pulse" /></div>
-              <div className="flex gap-1"><FlipCard digit={time.minutes[0]} animationClass={currentTheme.animationClass} /><FlipCard digit={time.minutes[1]} animationClass={currentTheme.animationClass} /></div>
-              <div className="hidden sm:flex flex-col gap-3 px-1 opacity-40"><div className="w-1.5 h-1.5 bg-white rounded-full" /><div className="w-1.5 h-1.5 bg-white rounded-full" /></div>
-              <div className="hidden sm:flex gap-1 opacity-60 scale-90"><FlipCard digit={time.seconds[0]} animationClass={currentTheme.animationClass} isSeconds /><FlipCard digit={time.seconds[1]} animationClass={currentTheme.animationClass} isSeconds /></div>
-            </div>
-            <div className="mt-4 text-white/50 font-display text-lg tracking-widest">{time.ampm}</div>
+        {/* Animals Selector */}
+        <div className="w-full relative z-[70]">
+          <CharacterSelector currentThemeId={themeId} themes={themes} onSelect={setThemeId} onAddClick={() => setIsModalOpen(true)} />
         </div>
 
-        <div className="w-full max-w-lg mb-8">
+        {/* Flip Clock - Responsive scaling */}
+        <div className="flex flex-col items-center py-4">
+            <div className="flex items-center gap-2 sm:gap-4 scale-[0.85] sm:scale-110 lg:scale-125 transition-transform">
+              <div className="flex gap-1.5"><FlipCard digit={time.hours[0]} animationClass={currentTheme.animationClass} /><FlipCard digit={time.hours[1]} animationClass={currentTheme.animationClass} /></div>
+              <div className="flex flex-col gap-3 px-1"><div className="w-2 h-2 sm:w-3 sm:h-3 bg-white rounded-full animate-pulse shadow-[0_0_10px_white]" /><div className="w-2 h-2 sm:w-3 sm:h-3 bg-white rounded-full animate-pulse shadow-[0_0_10px_white]" /></div>
+              <div className="flex gap-1.5"><FlipCard digit={time.minutes[0]} animationClass={currentTheme.animationClass} /><FlipCard digit={time.minutes[1]} animationClass={currentTheme.animationClass} /></div>
+              <div className="hidden md:flex flex-col gap-3 px-1 opacity-40"><div className="w-1.5 h-1.5 bg-white rounded-full" /><div className="w-1.5 h-1.5 bg-white rounded-full" /></div>
+              <div className="hidden md:flex gap-1 opacity-60 scale-90"><FlipCard digit={time.seconds[0]} animationClass={currentTheme.animationClass} isSeconds /><FlipCard digit={time.seconds[1]} animationClass={currentTheme.animationClass} isSeconds /></div>
+            </div>
+            <div className="mt-8 text-white/40 font-display text-xl tracking-[0.3em] uppercase">{time.ampm}</div>
+        </div>
+
+        {/* Chat - More flexible sizing */}
+        <div className="w-full max-w-xl pb-10">
           <ChatWidget theme={currentTheme} onCharacterSwitch={setThemeId} onSetAlarm={(t) => setAlarm({ id: '1', time: t!, soundType: 'digital', isActive: true })} onStopAlarm={() => { setIsAlarmRinging(false); stopAllSounds(); }} />
         </div>
       </main>
 
-      {/* Screensaver Mode UI */}
-      <div className={`absolute inset-0 z-0 flex flex-col items-center justify-center transition-all duration-1000 pointer-events-none ${isIdle ? 'opacity-100 scale-100' : 'opacity-0 scale-110'}`}>
-          <div className="flex items-center gap-4 scale-[1.3] sm:scale-[2] lg:scale-[2.5] drop-shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+      {/* Screensaver Mode UI - Always centered fixed */}
+      <div className={`fixed inset-0 z-0 flex flex-col items-center justify-center transition-all duration-1000 pointer-events-none ${isIdle ? 'opacity-100 scale-100' : 'opacity-0 scale-110'}`}>
+          <div className="flex items-center gap-4 scale-[1.2] sm:scale-[2] lg:scale-[3] drop-shadow-[0_20px_60px_rgba(0,0,0,0.8)]">
             <div className="flex gap-1"><FlipCard digit={time.hours[0]} animationClass={currentTheme.animationClass} /><FlipCard digit={time.hours[1]} animationClass={currentTheme.animationClass} /></div>
-            <div className="flex flex-col gap-4 py-2"><div className="w-3 h-3 bg-white rounded-full shadow-glow" /><div className="w-3 h-3 bg-white rounded-full shadow-glow" /></div>
+            <div className="flex flex-col gap-4 py-2"><div className="w-3 h-3 bg-white rounded-full shadow-[0_0_15px_white]" /><div className="w-3 h-3 bg-white rounded-full shadow-[0_0_15px_white]" /></div>
             <div className="flex gap-1"><FlipCard digit={time.minutes[0]} animationClass={currentTheme.animationClass} /><FlipCard digit={time.minutes[1]} animationClass={currentTheme.animationClass} /></div>
           </div>
-          <div className="mt-20 text-white/20 font-display text-4xl tracking-[1em] animate-pulse uppercase">{currentTheme.name}</div>
+          <div className="mt-24 text-white/10 font-display text-5xl tracking-[1.5em] animate-pulse uppercase select-none">{currentTheme.name}</div>
       </div>
 
       <AddCharacterModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onGenerate={async (n) => {

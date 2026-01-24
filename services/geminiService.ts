@@ -8,16 +8,29 @@ let currentThemeId: string | null = null;
 
 /**
  * Creates a new instance of GoogleGenAI using the process.env.API_KEY.
- * Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
+ * For China access, we use Vercel's relative path which is rewritten to the Google API.
  */
 const getAiClient = () => {
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Use relative path to leverage vercel.json rewrites for domestic access
+  const baseUrl = typeof window !== 'undefined' ? `${window.location.origin}` : undefined;
+  
+  // Initialize with proxy support
+  return new GoogleGenAI({ 
+    apiKey: process.env.API_KEY || '',
+    // Use the origin as baseUrl to hit the Vercel rewrite proxy
+    baseUrl: baseUrl 
+  } as any);
 };
 
 /**
  * Sends a message to a character chat session and streams the response.
  */
 export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMessage: string): AsyncGenerator<StreamUpdate, void, unknown> {
+    if (!process.env.API_KEY) {
+      yield { textChunk: "错误: 未配置 API_KEY。请在环境变量中设置后重试。", isComplete: true };
+      return;
+    }
+
     const client = getAiClient();
     
     // Initialize or reset chat session if theme changes
@@ -26,7 +39,7 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
       chatSession = client.chats.create({
         model: "gemini-3-flash-preview",
         config: {
-          systemInstruction: `${theme.quotePrompt}. 你是疯狂动物城的伙伴。你可以画图、设闹钟。回答务必简短生动。`,
+          systemInstruction: `${theme.quotePrompt}. 你是疯狂动物城的伙伴。你可以画图、设闹钟。回答务必简短生动，多使用 Emoji。`,
           tools: [{ functionDeclarations: [
             {
                 name: "generateImage",
@@ -44,13 +57,11 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
     }
 
     try {
-        // chat.sendMessageStream only accepts the message parameter, do not use contents.
         let resultStream = await chatSession.sendMessageStream({ message: userMessage });
         let fullText = "";
         let functionCalls: any[] = [];
         
         for await (const chunk of resultStream) {
-          // Access .text property directly, do not call .text()
           if (chunk.text) { 
             fullText += chunk.text; 
             yield { textChunk: chunk.text, fullText }; 
@@ -60,25 +71,25 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
           }
         }
 
-        // Handle tool calls if any
+        // Handle tool calls
         if (functionCalls.length > 0) {
           const toolResponses: Part[] = [];
           for (const call of functionCalls) {
             let resultData: any = { status: "ok" };
             
             if (call.name === "generateImage") {
-                // Correctly use generateContent to generate images with nano banana models
-                const response = await client.models.generateContent({
-                    model: 'gemini-2.5-flash-image',
-                    contents: { parts: [{ text: call.args.prompt as string }] },
-                });
-                
-                // Find the image part, do not assume it is the first part.
-                const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-                const img = part?.inlineData ? `data:${part.inlineData.mimeType};base64,${part.inlineData.data}` : null;
-                
-                if (img) yield { generatedImageUrl: img };
-                resultData = { result: img ? "已展示图片" : "生成失败" };
+                try {
+                  const response = await client.models.generateContent({
+                      model: 'gemini-2.5-flash-image',
+                      contents: { parts: [{ text: call.args.prompt as string }] },
+                  });
+                  const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+                  const img = part?.inlineData ? `data:${part.inlineData.mimeType};base64,${part.inlineData.data}` : null;
+                  if (img) yield { generatedImageUrl: img };
+                  resultData = { result: img ? "已展示图片" : "生成失败" };
+                } catch (imgErr) {
+                  resultData = { result: "生成画作时连接超时" };
+                }
             } else if (call.name === "setAlarm") {
                 yield { alarmConfig: { time: call.args.time as string } };
                 resultData = { result: "闹钟已设定" };
@@ -93,7 +104,6 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
             });
           }
           
-          // Send tool responses back to update model context via chat session
           const secondTurn = await chatSession.sendMessageStream({ message: toolResponses });
           for await (const chunk of secondTurn) { 
             if (chunk.text) { 
@@ -103,7 +113,8 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
           }
         }
     } catch (e) { 
-      yield { textChunk: "连接异常，请重试。", isComplete: true }; 
+      console.error("Gemini Stream Error:", e);
+      yield { textChunk: "连接超时。由于国内网络限制，请确保您在 Vercel 中正确配置了代理环境变量，并重试一次。", isComplete: true }; 
     }
 }
 
@@ -132,7 +143,6 @@ export async function generateNewCharacterTheme(name: string): Promise<ThemeConf
                 } 
             }
         });
-        // Access response.text property directly
         const data = JSON.parse(response.text || '{}');
         return { 
           id: `char-${Date.now()}`, 
