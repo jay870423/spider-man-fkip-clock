@@ -7,18 +7,17 @@ let chatSession: Chat | null = null;
 let currentThemeId: string | null = null;
 
 /**
- * Creates a new instance of GoogleGenAI using the process.env.API_KEY.
- * For China access, we use Vercel's relative path which is rewritten to the Google API.
+ * Creates a new instance of GoogleGenAI.
+ * For China access, we point the baseUrl to our Vercel origin which handles the /v1beta/ rewrite.
  */
 const getAiClient = () => {
-  // Use relative path to leverage vercel.json rewrites for domestic access
-  const baseUrl = typeof window !== 'undefined' ? `${window.location.origin}` : undefined;
+  const isBrowser = typeof window !== 'undefined';
+  const baseUrl = isBrowser ? window.location.origin : undefined;
   
   // Initialize with proxy support
   return new GoogleGenAI({ 
     apiKey: process.env.API_KEY || '',
-    // Use the origin as baseUrl to hit the Vercel rewrite proxy
-    baseUrl: baseUrl 
+    baseUrl: baseUrl // SDK will use relative path on this origin if structured correctly
   } as any);
 };
 
@@ -27,7 +26,7 @@ const getAiClient = () => {
  */
 export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMessage: string): AsyncGenerator<StreamUpdate, void, unknown> {
     if (!process.env.API_KEY) {
-      yield { textChunk: "错误: 未配置 API_KEY。请在环境变量中设置后重试。", isComplete: true };
+      yield { textChunk: "错误: 未检测到 API_KEY。请在 Vercel 环境变量中配置后重试。", isComplete: true };
       return;
     }
 
@@ -39,7 +38,7 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
       chatSession = client.chats.create({
         model: "gemini-3-flash-preview",
         config: {
-          systemInstruction: `${theme.quotePrompt}. 你是疯狂动物城的伙伴。你可以画图、设闹钟。回答务必简短生动，多使用 Emoji。`,
+          systemInstruction: `${theme.quotePrompt}. 你是疯狂动物城的伙伴。你可以画图、设闹钟。回答务必简短生动，多使用 Emoji。务必使用中文交流。`,
           tools: [{ functionDeclarations: [
             {
                 name: "generateImage",
@@ -88,7 +87,7 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
                   if (img) yield { generatedImageUrl: img };
                   resultData = { result: img ? "已展示图片" : "生成失败" };
                 } catch (imgErr) {
-                  resultData = { result: "生成画作时连接超时" };
+                  resultData = { result: "生成画作失败" };
                 }
             } else if (call.name === "setAlarm") {
                 yield { alarmConfig: { time: call.args.time as string } };
@@ -113,8 +112,8 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
           }
         }
     } catch (e) { 
-      console.error("Gemini Stream Error:", e);
-      yield { textChunk: "连接超时。由于国内网络限制，请确保您在 Vercel 中正确配置了代理环境变量，并重试一次。", isComplete: true }; 
+      console.error("Gemini Error:", e);
+      yield { textChunk: "连接异常。请确认网络环境或 Vercel 代理配置正确。", isComplete: true }; 
     }
 }
 
