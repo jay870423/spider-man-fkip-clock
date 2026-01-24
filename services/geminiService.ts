@@ -2,26 +2,59 @@
 import { GoogleGenAI, Chat, Type, Part } from "@google/genai";
 import { ThemeConfig, StreamUpdate, MoodType } from "../types";
 
+/**
+ * GLOBAL FETCH INTERCEPTOR (ROBUST IMPLEMENTATION)
+ * Some browsers prevent direct assignment to window.fetch because it's defined as a getter.
+ * We use Object.defineProperty to safely redirect Google AI traffic through our Vercel proxy.
+ */
+if (typeof window !== 'undefined' && !(window as any)._fetchIntercepted) {
+  try {
+    const originalFetch = window.fetch.bind(window);
+    (window as any)._fetchIntercepted = true;
+    
+    Object.defineProperty(window, 'fetch', {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value: async (resource: RequestInfo | URL, config?: RequestInit) => {
+        const url = typeof resource === 'string' ? resource : resource instanceof URL ? resource.href : (resource as Request).url;
+        
+        if (url.includes('generativelanguage.googleapis.com')) {
+          const newUrl = url.replace('https://generativelanguage.googleapis.com', `${window.location.origin}/google-proxy`);
+          return originalFetch(newUrl, config);
+        }
+        return originalFetch(resource, config);
+      }
+    });
+  } catch (e) {
+    console.warn("Global fetch intercept failed, falling back to baseUrl config:", e);
+  }
+}
+
 let chatSession: Chat | null = null;
 let currentThemeId: string | null = null;
 
 const getAiClient = () => {
   const isBrowser = typeof window !== 'undefined';
   
-  // Base URL pointing to our namespaced Vercel proxy.
-  // When deployed, this allows users in restricted regions to access Gemini.
-  // Note: Local development still requires a VPN unless you have a local proxy.
-  const baseUrl = isBrowser ? `${window.location.origin}/google-proxy` : '';
-  
-  return new GoogleGenAI({ 
-    apiKey: process.env.API_KEY || '',
-    baseUrl: baseUrl 
-  } as any);
+  // Explicitly set baseUrl in the constructor as the primary method for proxying.
+  // This works alongside the fetch interceptor for maximum compatibility in restricted regions.
+  const config: any = { 
+    apiKey: process.env.API_KEY || ''
+  };
+
+  if (isBrowser) {
+    // Route via the Vercel proxy defined in vercel.json
+    // This allows requests to bypass regional blocks when deployed.
+    config.baseUrl = `${window.location.origin}/google-proxy`;
+  }
+
+  return new GoogleGenAI(config);
 };
 
 export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMessage: string): AsyncGenerator<StreamUpdate, void, unknown> {
     if (!process.env.API_KEY) {
-      yield { textChunk: "Error: API_KEY is missing from environment.", isComplete: true };
+      yield { textChunk: "Error: API_KEY is missing. Please set it in your environment variables.", isComplete: true };
       return;
     }
 
@@ -40,7 +73,7 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
           1. COMPANIONSHIP (陪聊) is your primary mission. Be friendly and engaging.
           2. LANGUAGE INTELLIGENCE: 
              - Detect the user's language.
-             - If the user speaks Chinese, reply in fluent Chinese.
+             - If the user speaks Chinese, reply in fluent Chinese (简体中文).
              - If the user speaks English, reply in English.
           3. TOOLS: 
              - Suggest REAL music via 'provideMusic'.
@@ -111,8 +144,8 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
           }
         }
     } catch (e: any) { 
-      console.error("Gemini Stream Error:", e);
-      yield { textChunk: `\n⚠️ Connection reset. If you are in a restricted region, please ensure the Vercel deployment is active.`, isComplete: true }; 
+      console.error("Gemini Proxy Error:", e);
+      yield { textChunk: `\n⚠️ 连接异常。如果您在中国境内使用，请确保项目已正确部署到 Vercel 以激活反向代理。本地开发环境仍需开启 VPN。`, isComplete: true }; 
     }
 }
 
