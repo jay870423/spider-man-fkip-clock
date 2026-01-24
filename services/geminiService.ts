@@ -65,24 +65,24 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
           - Identity: You are ${theme.name} from Zootopia. ${theme.quotePrompt}.
           
           CORE RULES:
-          1. COMPANIONSHIP: Be friendly, witty, and engaging.
-          2. LANGUAGE: Detect user language. Reply in the SAME language (Simplified Chinese for Chinese users).
-          3. MUSIC PLATFORMS: 
-             - If user is CHINESE: Suggest music from Baidu Music (play.taihe.com), QQ Music (y.qq.com), or Kugou (kugou.com).
-             - If user is INTERNATIONAL: Suggest music from YouTube or Spotify.
-          4. TOOL USE: Use 'provideMusic' to suggest songs and 'setAlarm' for clocks.
-          5. NO REPETITION: Do NOT output your internal reasoning or say "I will now use the tool...". Execute the tool immediately. If you suggest a song, do not describe it twice. Give a brief, catchy intro once.`,
+          1. COMPANIONSHIP: Be friendly, witty, and helpful.
+          2. LANGUAGE: Detect user language. Reply in the SAME language.
+          3. MEDIA & PLATFORMS (CRITICAL): 
+             - For CHINESE users: Suggest music/media from Baidu Music (Taihe), QQ Music, or Kugou.
+             - For INTERNATIONAL users: Suggest music, movies, or videos ONLY from YouTube.
+          4. TOOL USE: Use 'provideMusic' for both music and video/movie recommendations. Use 'setAlarm' for clocks.
+          5. NO DUPLICATION: Do NOT repeat the song/movie name or description after the tool executes. Do NOT say "I will now search for..." or "Here is the result...". Let the tool output speak for itself with a very brief (max 1 sentence) intro.`,
           tools: [{ functionDeclarations: [
             {
                 name: "provideMusic",
-                description: "Suggest a real song. Use Chinese platforms (Baidu/QQ) for Chinese users.",
+                description: "Suggest a real song, movie, or video. Use YouTube for international and Chinese platforms for Chinese users.",
                 parameters: { 
                   type: Type.OBJECT, 
                   properties: { 
                     title: { type: Type.STRING },
-                    artist: { type: Type.STRING },
+                    artist: { type: Type.STRING, description: "Artist or Movie Director/Studio" },
                     mood: { type: Type.STRING, enum: ["neutral", "calm", "cheerful", "focus", "supportive"] },
-                    externalUrl: { type: Type.STRING, description: "Direct link to the song or platform search." }
+                    externalUrl: { type: Type.STRING, description: "Direct link to the media on the appropriate platform." }
                   }, 
                   required: ["title", "artist", "mood"] 
                 }
@@ -108,9 +108,10 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
         let functionCalls: any[] = [];
         
         for await (const chunk of resultStream) {
-          // Filter out redundant "thinking" text often outputted before tool calls
-          if (chunk.text && !chunk.text.includes('provideMusic') && !chunk.text.includes('setAlarm')) { 
-            yield { textChunk: chunk.text }; 
+          // Filter out text that looks like reasoning or tool preamble to prevent duplicate-feeling output
+          const chunkText = chunk.text;
+          if (chunkText && !chunkText.includes('provideMusic') && !chunkText.includes('setAlarm')) { 
+            yield { textChunk: chunkText }; 
           }
           if (chunk.functionCalls) { functionCalls.push(...chunk.functionCalls); }
         }
@@ -127,10 +128,10 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
                 
                 let fallbackUrl = "";
                 if (isChineseRequest) {
-                  // Prioritize Baidu Music (Taihe) or QQ Music
-                  const query = encodeURIComponent(title + ' ' + artist);
-                  fallbackUrl = `https://play.taihe.com/search?key=${query}`;
+                  // Prioritize Baidu Music or Search for Chinese users
+                  fallbackUrl = `https://www.baidu.com/s?wd=${encodeURIComponent(title + ' ' + artist + ' 音乐')}`;
                 } else {
+                  // Everything else goes to YouTube
                   fallbackUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + artist)}`;
                 }
 
@@ -146,14 +147,17 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
             toolResponses.push({ functionResponse: { name: call.name, response: resultData, id: call.id } });
           }
           
-          // Second turn to acknowledge tool execution
+          // Execute second turn to close the tool call loop without adding extra text
           const secondTurn = await chatSession.sendMessageStream({ message: toolResponses });
           for await (const chunk of secondTurn) { 
-            if (chunk.text) { yield { textChunk: chunk.text }; } 
+             // We generally ignore text from the second turn if it's just repetition
+             if (chunk.text && chunk.text.length > 5 && !chunk.text.toLowerCase().includes('ok')) {
+                yield { textChunk: chunk.text }; 
+             }
           }
         }
     } catch (e: any) { 
-      console.error("Gemini Error:", e);
+      console.error("Gemini Stream Error:", e);
       yield { textChunk: `\n⚠️ 连接中...`, isComplete: true }; 
     }
 }
