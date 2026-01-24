@@ -63,30 +63,26 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
         config: {
           systemInstruction: `SYSTEM INSTRUCTIONS: 
           - Identity: You are ${theme.name} from Zootopia. ${theme.quotePrompt}.
-          - Character: Witty, energetic, and a helpful companion.
           
           CORE RULES:
-          1. COMPANIONSHIP (陪聊) is your primary mission. Be friendly and engaging.
-          2. LANGUAGE INTELLIGENCE: 
-             - Detect the user's language.
-             - If the user speaks Chinese, reply in fluent Chinese (简体中文).
-             - If the user speaks English, reply in English.
-          3. TOOLS & REGIONAL PREFERENCES: 
-             - Suggest REAL music via 'provideMusic'.
-             - IMPORTANT: If the user is speaking Chinese, provide 'externalUrl' from Chinese platforms like QQ Music (y.qq.com), NetEase (music.163.com), or Kugou. 
-             - If the user is speaking English/International languages, provide 'externalUrl' from YouTube or Spotify.
-             - Set alarms via 'setAlarm'.`,
+          1. COMPANIONSHIP: Be friendly, witty, and engaging.
+          2. LANGUAGE: Detect user language. Reply in the SAME language (Simplified Chinese for Chinese users).
+          3. MUSIC PLATFORMS: 
+             - If user is CHINESE: Suggest music from QQ Music (y.qq.com), Baidu Music (play.taihe.com), or Kugou (kugou.com).
+             - If user is INTERNATIONAL: Suggest music from YouTube or Spotify.
+          4. TOOL USE: Use 'provideMusic' to suggest songs and 'setAlarm' for clocks.
+          5. CONCISENESS: Do not repeat your reasoning after using a tool. Simply confirm or provide the requested information.`,
           tools: [{ functionDeclarations: [
             {
                 name: "provideMusic",
-                description: "Suggest a REAL popular song. Provide a regional link if possible.",
+                description: "Suggest a real song. Use Chinese platforms for Chinese users.",
                 parameters: { 
                   type: Type.OBJECT, 
                   properties: { 
                     title: { type: Type.STRING },
                     artist: { type: Type.STRING },
                     mood: { type: Type.STRING, enum: ["neutral", "calm", "cheerful", "focus", "supportive"] },
-                    externalUrl: { type: Type.STRING, description: "URL to the song on a platform like YouTube, QQ Music, or Spotify." }
+                    externalUrl: { type: Type.STRING, description: "Direct link to the song." }
                   }, 
                   required: ["title", "artist", "mood"] 
                 }
@@ -124,16 +120,13 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
             if (call.name === "provideMusic") {
                 const title = call.args.title as string;
                 const artist = call.args.artist as string;
-                
-                // Intelligent Fallback Logic based on language
-                let fallbackUrl = "";
                 const isChineseRequest = containsChinese(userMessage) || containsChinese(title) || containsChinese(artist);
                 
+                let fallbackUrl = "";
                 if (isChineseRequest) {
-                  // Fallback to QQ Music search for Chinese users
-                  fallbackUrl = `https://y.qq.com/n/ryqq/search?w=${encodeURIComponent(title + ' ' + artist)}`;
+                  // Prioritize Baidu/QQ/Kugou search for Chinese users
+                  fallbackUrl = `https://www.baidu.com/s?wd=${encodeURIComponent(title + ' ' + artist + ' 音乐')}`;
                 } else {
-                  // Fallback to YouTube for international users
                   fallbackUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + artist)}`;
                 }
 
@@ -155,8 +148,8 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
           }
         }
     } catch (e: any) { 
-      console.error("Gemini Proxy Error:", e);
-      yield { textChunk: `\n⚠️ 连接异常。如果您在中国境内使用，请确保项目已正确部署到 Vercel 以激活反向代理。`, isComplete: true }; 
+      console.error("Gemini Error:", e);
+      yield { textChunk: `\n⚠️ 连接超时，请稍后重试。`, isComplete: true }; 
     }
 }
 

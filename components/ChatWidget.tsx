@@ -31,15 +31,15 @@ const MusicPlayer: React.FC<{ music: MusicMetadata }> = ({ music }) => {
       };
   }, [isPlaying]);
 
-  // Determine platform label based on URL
   const getPlatformLabel = (url?: string) => {
     if (!url) return "Platform";
-    if (url.includes('y.qq.com')) return "QQ Music";
-    if (url.includes('music.163.com')) return "NetEase Cloud";
-    if (url.includes('kugou.com')) return "Kugou Music";
-    if (url.includes('youtube.com')) return "YouTube";
-    if (url.includes('spotify.com')) return "Spotify";
-    if (url.includes('baidu.com')) return "Baidu Music";
+    const low = url.toLowerCase();
+    if (low.includes('y.qq.com')) return "QQ Music";
+    if (low.includes('music.163.com')) return "NetEase";
+    if (low.includes('kugou.com')) return "Kugou";
+    if (low.includes('taihe.com') || low.includes('baidu.com')) return "Baidu Music";
+    if (low.includes('youtube.com')) return "YouTube";
+    if (low.includes('spotify.com')) return "Spotify";
     return "Music Platform";
   };
 
@@ -51,12 +51,11 @@ const MusicPlayer: React.FC<{ music: MusicMetadata }> = ({ music }) => {
         <button 
           onClick={togglePlay}
           className={`w-12 h-12 rounded-full flex items-center justify-center shadow-2xl transform hover:scale-105 active:scale-90 transition-all ${isPlaying ? 'bg-red-500 text-white' : 'bg-white text-black'}`}
-          title="Play mood ambient"
         >
           {isPlaying ? (
             <div className="flex gap-1 items-center">
-              <div className="w-1 h-4 bg-white rounded-full"></div>
-              <div className="w-1 h-4 bg-white rounded-full"></div>
+              <div className="w-1 h-4 bg-white rounded-full animate-pulse"></div>
+              <div className="w-1 h-4 bg-white rounded-full animate-pulse delay-75"></div>
             </div>
           ) : (
             <span className="text-xl ml-0.5">▶</span>
@@ -65,8 +64,7 @@ const MusicPlayer: React.FC<{ music: MusicMetadata }> = ({ music }) => {
         
         <div className="flex-1 overflow-hidden">
           <div className="flex items-center gap-2">
-             <span className="text-[9px] bg-white/20 text-white px-2 py-0.5 rounded-full uppercase font-bold tracking-widest">{music.mood} VIBE</span>
-             {isPlaying && <span className="text-[9px] text-green-400 animate-pulse font-bold uppercase">Synthesizing...</span>}
+             <span className="text-[9px] bg-white/20 text-white px-2 py-0.5 rounded-full uppercase font-bold tracking-widest">{music.mood}</span>
           </div>
           <h4 className="text-white font-black text-sm mt-0.5 truncate">{music.title}</h4>
           <p className="text-white/50 text-[10px] truncate">{music.artist}</p>
@@ -80,7 +78,7 @@ const MusicPlayer: React.FC<{ music: MusicMetadata }> = ({ music }) => {
           rel="noopener noreferrer"
           className="flex items-center justify-center gap-2 py-2 px-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs text-white/80 hover:text-white transition-all font-bold"
         >
-          <span>🎧 Open on {platformLabel}</span>
+          <span>🎧 Listen on {platformLabel}</span>
           <span className="text-[10px]">↗</span>
         </a>
       )}
@@ -95,7 +93,6 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const activeThemeIdRef = useRef(theme.id);
 
-  // Initial welcome based on the character
   useEffect(() => {
     activeThemeIdRef.current = theme.id;
     const greetings = [
@@ -127,31 +124,34 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
 
     try {
       const stream = sendMessageToCharacterStream(theme, userMsg);
-      let fullText = "";
+      let currentTurnText = "";
       
       for await (const update of stream) {
         if (activeThemeIdRef.current !== currentSessionThemeId) break;
 
         if (update.textChunk) {
-          fullText += update.textChunk;
+          currentTurnText += update.textChunk;
           setMessages(prev => {
             const newHistory = [...prev];
             const lastMsg = newHistory[newHistory.length - 1];
+            // If the last message is a fresh model thought (indicated by '...' or role mismatch), update or push
             if (lastMsg.role === 'model' && !lastMsg.music) {
-               newHistory[newHistory.length - 1] = { ...lastMsg, text: fullText };
+               newHistory[newHistory.length - 1] = { ...lastMsg, text: currentTurnText };
             } else {
-               newHistory.push({ role: 'model', text: fullText });
+               newHistory.push({ role: 'model', text: currentTurnText });
             }
             return newHistory;
           });
         }
 
         if (update.musicSuggestion) {
+          // When a music suggestion comes, we reset the text buffer to avoid duplication in the next turn
+          currentTurnText = ""; 
           setMessages(prev => [
             ...prev, 
             { 
               role: 'model', 
-              text: `Since you asked, here's a great song to match our vibe:`, 
+              text: `Here's a song for you:`, 
               music: update.musicSuggestion 
             }
           ]);
@@ -169,7 +169,6 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
 
   return (
     <div className={`relative w-full h-[45vh] min-h-[400px] flex flex-col rounded-[2.5rem] ${theme.primaryColor} bg-opacity-20 backdrop-blur-3xl border border-white/10 shadow-2xl overflow-hidden`}>
-      {/* Header */}
       <div className="px-5 py-3 border-b border-white/5 bg-black/40 flex justify-between items-center z-10">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full border border-white/20 overflow-hidden bg-white/10 shadow-inner">
@@ -183,18 +182,17 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
           {isLoading && <div className="w-2 h-2 bg-blue-400 rounded-full animate-ping"></div>}
       </div>
 
-      {/* Chat Messages Area */}
       <div className="flex-1 overflow-y-auto p-5 space-y-5 no-scrollbar bg-gradient-to-b from-black/20 to-transparent">
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in-up`}>
             <div className={`
               max-w-[85%] rounded-[1.5rem] px-4 py-3 text-sm leading-relaxed shadow-2xl
               ${msg.role === 'user' 
-                ? 'bg-white text-black rounded-br-none' 
-                : 'bg-black/70 text-white rounded-bl-none border border-white/10'
+                ? 'bg-white text-black rounded-br-none font-bold' 
+                : 'bg-black/70 text-white rounded-bl-none border border-white/10 font-medium'
               }
             `}>
-              <div className="whitespace-pre-wrap font-medium">{msg.text}</div>
+              <div className="whitespace-pre-wrap">{msg.text}</div>
               {msg.music && <MusicPlayer music={msg.music} />}
             </div>
           </div>
@@ -202,7 +200,6 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
         <div ref={messagesEndRef} className="h-2" />
       </div>
 
-      {/* Input Area */}
       <div className="p-4 bg-black/50 backdrop-blur-xl border-t border-white/5 relative z-20">
         <form onSubmit={handleSubmit} className="relative group">
           <input 
@@ -210,7 +207,7 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={isLoading}
-            placeholder={isLoading ? "Typing..." : "Say something, ask for music or an alarm..."}
+            placeholder={isLoading ? "Thinking..." : "Chat with me..."}
             className="w-full bg-white/5 border border-white/10 rounded-full pl-6 pr-14 py-4 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/50 focus:bg-white/10 transition-all shadow-inner"
           />
           <button 
