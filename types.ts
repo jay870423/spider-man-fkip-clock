@@ -32,10 +32,17 @@ export interface TimeState {
   ampm: string;
 }
 
+export interface MusicMetadata {
+  title: string;
+  artist: string;
+  mood: MoodType;
+}
+
 export interface ChatMessage {
   role: 'user' | 'model';
   text: string;
-  imageUrl?: string; // New: Supports AI generated images
+  imageUrl?: string; 
+  music?: MusicMetadata; // New: Supports music suggestions
 }
 
 export interface Alarm {
@@ -53,9 +60,8 @@ export interface StreamUpdate {
     time?: string;
     soundType?: string;
   };
-  imagePrompt?: string; // New: Request to generate image
-  generatedImageUrl?: string; // New: The final image
-  moodMusic?: MoodType; // New: Update background music mood
+  musicSuggestion?: MusicMetadata; // New: Model suggested music
+  moodMusic?: MoodType; 
   stopAlarm?: boolean;
   isComplete?: boolean;
 }

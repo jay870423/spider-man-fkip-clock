@@ -1,29 +1,22 @@
 
 import { GoogleGenAI, Chat, Type, Part } from "@google/genai";
-import { ThemeConfig, StreamUpdate } from "../types";
+import { ThemeConfig, StreamUpdate, MoodType } from "../types";
 
-// Persist chat session state
 let chatSession: Chat | null = null;
 let currentThemeId: string | null = null;
 
-/**
- * Creates a new instance of GoogleGenAI.
- * For domestic access, we proxy through the current origin.
- */
 const getAiClient = () => {
   const isBrowser = typeof window !== 'undefined';
-  // Ensure origin is clean with no trailing slash
   const origin = isBrowser ? window.location.origin.replace(/\/$/, '') : '';
-  
   return new GoogleGenAI({ 
     apiKey: process.env.API_KEY || '',
-    baseUrl: origin // Vercel rewrite handles /v1beta/
+    baseUrl: origin 
   } as any);
 };
 
 export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMessage: string): AsyncGenerator<StreamUpdate, void, unknown> {
     if (!process.env.API_KEY) {
-      yield { textChunk: "错误: 未配置 API_KEY。请检查环境变量。", isComplete: true };
+      yield { textChunk: "错误: 请在环境变量中配置 API_KEY。", isComplete: true };
       return;
     }
 
@@ -34,17 +27,35 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
       chatSession = client.chats.create({
         model: "gemini-3-flash-preview",
         config: {
-          systemInstruction: `${theme.quotePrompt}. 你是疯狂动物城的伙伴。回答务必简短生动，多用 Emoji。必须使用中文交流。`,
+          systemInstruction: `${theme.quotePrompt}. 你是疯狂动物城的 ${theme.name}。
+          - 如果用户想要听音乐、放松或来点旋律，请使用 provideMusic 工具。
+          - 设闹钟使用 setAlarm。
+          - 你只能通过文字聊天，不提供画图功能。
+          - 回答简短，多用 Emoji，必须说中文。`,
           tools: [{ functionDeclarations: [
             {
-                name: "generateImage",
-                description: "根据描述画一张画",
-                parameters: { type: Type.OBJECT, properties: { prompt: { type: Type.STRING } }, required: ["prompt"] }
+                name: "provideMusic",
+                description: "Suggest a song based on the user's mood or request.",
+                parameters: { 
+                  type: Type.OBJECT, 
+                  properties: { 
+                    title: { type: Type.STRING, description: "Song title" },
+                    artist: { type: Type.STRING, description: "Artist name" },
+                    mood: { type: Type.STRING, enum: ["neutral", "calm", "cheerful", "focus", "supportive"], description: "The vibe of the song" }
+                  }, 
+                  required: ["title", "artist", "mood"] 
+                }
             },
             {
                 name: "setAlarm",
-                description: "设置闹钟",
-                parameters: { type: Type.OBJECT, properties: { time: { type: Type.STRING, description: "格式 HH:mm" } }, required: ["time"] }
+                description: "Set a flip clock alarm.",
+                parameters: { 
+                  type: Type.OBJECT, 
+                  properties: { 
+                    time: { type: Type.STRING, description: "HH:mm format" } 
+                  }, 
+                  required: ["time"] 
+                }
             }
           ] }],
         },
@@ -53,48 +64,39 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
 
     try {
         let resultStream = await chatSession.sendMessageStream({ message: userMessage });
-        let fullText = "";
         let functionCalls: any[] = [];
         
         for await (const chunk of resultStream) {
-          if (chunk.text) { 
-            fullText += chunk.text; 
-            yield { textChunk: chunk.text, fullText }; 
-          }
-          if (chunk.functionCalls) {
-            functionCalls.push(...chunk.functionCalls);
-          }
+          if (chunk.text) { yield { textChunk: chunk.text }; }
+          if (chunk.functionCalls) { functionCalls.push(...chunk.functionCalls); }
         }
 
         if (functionCalls.length > 0) {
           const toolResponses: Part[] = [];
           for (const call of functionCalls) {
             let resultData: any = { status: "ok" };
-            if (call.name === "generateImage") {
-                try {
-                  const response = await client.models.generateContent({
-                      model: 'gemini-2.5-flash-image',
-                      contents: { parts: [{ text: call.args.prompt as string }] },
-                  });
-                  const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-                  const img = part?.inlineData ? `data:${part.inlineData.mimeType};base64,${part.inlineData.data}` : null;
-                  if (img) yield { generatedImageUrl: img };
-                  resultData = { result: img ? "已生成图片" : "生成失败" };
-                } catch (e) { resultData = { result: "图片生成接口异常" }; }
+            
+            if (call.name === "provideMusic") {
+                yield { musicSuggestion: { 
+                    title: call.args.title as string, 
+                    artist: call.args.artist as string, 
+                    mood: call.args.mood as MoodType 
+                }};
+                resultData = { result: "Music player displayed." };
             } else if (call.name === "setAlarm") {
                 yield { alarmConfig: { time: call.args.time as string } };
-                resultData = { result: "闹钟已设定" };
+                resultData = { result: "Alarm set." };
             }
             toolResponses.push({ functionResponse: { name: call.name, response: resultData, id: call.id } });
           }
+          
           const secondTurn = await chatSession.sendMessageStream({ message: toolResponses });
           for await (const chunk of secondTurn) { 
-            if (chunk.text) { fullText += chunk.text; yield { textChunk: chunk.text, fullText }; } 
+            if (chunk.text) { yield { textChunk: chunk.text }; } 
           }
         }
     } catch (e: any) { 
-      console.error("Gemini Error:", e);
-      yield { textChunk: `连接失败: ${e.message || '网络异常'}。请确认已在 Vercel 绑定 API_KEY 并通过您的自定义域名访问。`, isComplete: true }; 
+      yield { textChunk: `\n⚠️ 连接中断: ${e.message}`, isComplete: true }; 
     }
 }
 
@@ -103,7 +105,7 @@ export async function generateNewCharacterTheme(name: string): Promise<ThemeConf
     try {
         const response = await client.models.generateContent({
             model: "gemini-3-flash-preview",
-            contents: `为疯狂动物城角色 ${name} 设计主题。返回 JSON。`,
+            contents: `Generate a Zootopia character theme for "${name}". Return JSON.`,
             config: { 
                 responseMimeType: "application/json", 
                 responseSchema: { 
@@ -124,7 +126,7 @@ export async function generateNewCharacterTheme(name: string): Promise<ThemeConf
         return { 
           id: `char-${Date.now()}`, 
           name, 
-          avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${name}`, 
+          avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${name}&backgroundColor=b6e3f4`, 
           ...data, 
           secondaryColor: '', 
           accentColor: '' 

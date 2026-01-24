@@ -5,13 +5,14 @@ let masterGain: GainNode | null = null;
 let currentOscillators: { stop: () => void }[] = [];
 
 /**
- * Lazily initialize the AudioContext.
+ * Lazily initialize the AudioContext and ensure it's connected to destination.
  */
 const getAudioContext = () => {
   if (!audioCtx) {
-    audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 44100 });
     masterGain = audioCtx.createGain();
     masterGain.connect(audioCtx.destination);
+    masterGain.gain.setValueAtTime(0.5, audioCtx.currentTime); // Standard volume
   }
   return audioCtx;
 };
@@ -20,156 +21,82 @@ const getAudioContext = () => {
  * Stops all active oscillators and clears active timers/intervals.
  */
 export const stopAllSounds = () => {
-  currentOscillators.forEach(osc => {
-    try { osc.stop(); } catch(e) {}
+  currentOscillators.forEach(item => {
+    try { item.stop(); } catch(e) {}
   });
   currentOscillators = [];
 };
 
-/**
- * Stop any ambient music currently playing.
- * Fixes: ChatWidget import error.
- */
 export const stopAmbientMusic = () => {
   stopAllSounds();
 };
 
 /**
- * Plays background music based on a provided mood.
- * Fixes: ChatWidget import error.
- * @param mood 'neutral' | 'calm' | 'cheerful' | 'focus' | 'supportive'
+ * Plays sophisticated synthesized background music based on a provided mood.
+ * Designed to be audible even on small speakers.
  */
-export const playMoodBackground = (mood: string) => {
+export const playMoodBackground = async (mood: string) => {
   const ctx = getAudioContext();
-  if (ctx.state === 'suspended') ctx.resume();
+  
+  // CRITICAL: Browsers block AudioContext until a user click resumes it.
+  if (ctx.state === 'suspended') {
+    await ctx.resume();
+  }
+  
   stopAllSounds();
 
   const now = ctx.currentTime;
   const gain = ctx.createGain();
   gain.connect(masterGain!);
   gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(0.15, now + 2); // 2-second fade in
+  gain.gain.linearRampToValueAtTime(0.4, now + 1.5); // Fade in
 
   if (mood === 'cheerful') {
-    // Cheerful: Bright major scale sequence
-    const freqs = [523.25, 659.25, 783.99, 1046.50]; // C Major
-    freqs.forEach((f) => {
+    // Cheerful: Bouncy Arpeggio (C Major 7)
+    const freqs = [261.63, 329.63, 392.00, 493.88]; // C4, E4, G4, B4
+    freqs.forEach((f, i) => {
       const osc = ctx.createOscillator();
-      osc.type = 'sine';
+      const subGain = ctx.createGain();
+      osc.type = 'triangle'; // Richer than sine
       osc.frequency.setValueAtTime(f, now);
-      osc.connect(gain);
+      
+      // Create a rhythmic sequence
+      const startTime = now + (i * 0.2);
+      subGain.gain.setValueAtTime(0, now);
+      subGain.gain.setTargetAtTime(0.15, startTime, 0.1);
+      
+      osc.connect(subGain);
+      subGain.connect(gain);
       osc.start(now);
       currentOscillators.push(osc);
     });
   } else if (mood === 'focus') {
-    // Focus: Steady triangle wave drone with rhythmic pulses
+    // Focus: Minimalist Techno Pulse
     const drone = ctx.createOscillator();
-    drone.type = 'triangle';
-    drone.frequency.setValueAtTime(146.83, now); // D3
+    drone.type = 'sine';
+    drone.frequency.setValueAtTime(110, now); // A2
     drone.connect(gain);
     drone.start(now);
     currentOscillators.push(drone);
 
-    const pulseTimer = window.setInterval(() => {
+    const pulseInterval = window.setInterval(() => {
         if (!audioCtx) return;
+        const time = audioCtx.currentTime;
         const p = audioCtx.createOscillator();
         const pg = audioCtx.createGain();
-        p.connect(pg); pg.connect(gain);
-        p.frequency.setValueAtTime(440, audioCtx.currentTime);
-        pg.gain.setValueAtTime(0.05, audioCtx.currentTime);
-        pg.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
-        p.start(); p.stop(audioCtx.currentTime + 0.3);
-    }, 2000);
-    currentOscillators.push({ stop: () => clearInterval(pulseTimer) });
-  } else if (mood === 'supportive') {
-    // Supportive: Warm sine wave pads using an F Major chord
-    const warmFreqs = [174.61, 220.00, 261.63]; 
-    warmFreqs.forEach(f => {
-      const osc = ctx.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(f, now);
-      const subGain = ctx.createGain();
-      subGain.gain.setValueAtTime(0.04, now);
-      osc.connect(subGain);
-      subGain.connect(gain);
-      osc.start(now);
-      currentOscillators.push(osc);
-    });
-  } else {
-    // Calm/Neutral: Soft deep drone (default)
-    const lowFreqs = [73.42, 110, 146.83]; // Deep D tones
-    lowFreqs.forEach(f => {
-      const osc = ctx.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(f, now);
-      const subGain = ctx.createGain();
-      subGain.gain.setValueAtTime(0.03, now);
-      osc.connect(subGain);
-      subGain.connect(gain);
-      osc.start(now);
-      currentOscillators.push(osc);
-    });
-  }
-};
-
-/**
- * Plays ambient vibes based on the time of day.
- * @param context 'morning' | 'afternoon' | 'night'
- */
-export const playContextualVibe = (context: 'morning' | 'afternoon' | 'night') => {
-  const ctx = getAudioContext();
-  if (ctx.state === 'suspended') ctx.resume();
-  stopAllSounds();
-
-  const now = ctx.currentTime;
-  const gain = ctx.createGain();
-  gain.connect(masterGain!);
-  gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(0.2, now + 2); // 2-second fade in
-
-  if (context === 'morning') {
-    // 清晨：明亮的大调音阶 + 模拟鸟鸣
-    const freqs = [523.25, 659.25, 783.99, 1046.50]; // C Major
-    freqs.forEach((f, i) => {
-      const osc = ctx.createOscillator();
-      const lfo = ctx.createOscillator();
-      const lfoGain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(f, now);
-      lfo.frequency.setValueAtTime(0.5 + i * 0.2, now);
-      lfoGain.gain.setValueAtTime(0.05, now);
-      lfo.connect(lfoGain.gain);
-      osc.connect(lfoGain);
-      lfoGain.connect(gain);
-      osc.start(now);
-      lfo.start(now);
-      currentOscillators.push(osc, lfo);
-    });
-  } else if (context === 'afternoon') {
-    // 午后：Lo-fi 节奏感（模拟极简节拍）
-    const drone = ctx.createOscillator();
-    drone.type = 'triangle';
-    drone.frequency.setValueAtTime(146.83, now); // D3
-    drone.connect(gain);
-    drone.start(now);
-    currentOscillators.push(drone);
-
-    // 每隔1.5秒的一个软脉冲
-    const pulseTimer = window.setInterval(() => {
-        if (!audioCtx) return;
-        const p = audioCtx.createOscillator();
-        const pg = audioCtx.createGain();
-        p.connect(pg); pg.connect(gain);
-        p.frequency.setValueAtTime(440, audioCtx.currentTime);
-        pg.gain.setValueAtTime(0.1, audioCtx.currentTime);
-        pg.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
-        p.start(); p.stop(audioCtx.currentTime + 0.5);
-    }, 1500);
-    currentOscillators.push({ stop: () => clearInterval(pulseTimer) });
-  } else {
-    // 夜晚：深沉的低频 + 柔和的波浪声
-    const lowFreqs = [73.42, 110, 146.83]; // Deep D
-    lowFreqs.forEach(f => {
+        p.type = 'square';
+        p.frequency.setValueAtTime(220, time);
+        pg.gain.setValueAtTime(0.08, time);
+        pg.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+        p.connect(pg);
+        pg.connect(gain);
+        p.start(time);
+        p.stop(time + 0.1);
+    }, 500); // 120 BPM pulse
+    currentOscillators.push({ stop: () => clearInterval(pulseInterval) });
+  } else if (mood === 'calm' || mood === 'neutral') {
+    // Calm: Floating sine pads with a bit of detune for "shimmer"
+    [261.63, 262.63, 392.00].forEach(f => {
       const osc = ctx.createOscillator();
       osc.type = 'sine';
       osc.frequency.setValueAtTime(f, now);
@@ -180,11 +107,52 @@ export const playContextualVibe = (context: 'morning' | 'afternoon' | 'night') =
       osc.start(now);
       currentOscillators.push(osc);
     });
+  } else if (mood === 'supportive') {
+    // Supportive: Warm "Music Box" style tones
+    const melody = [523.25, 659.25, 783.99, 880.00]; // C5, E5, G5, A5
+    const melodyTimer = window.setInterval(() => {
+        if (!audioCtx) return;
+        const time = audioCtx.currentTime;
+        const f = melody[Math.floor(Math.random() * melody.length)];
+        const osc = audioCtx.createOscillator();
+        const mg = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(f, time);
+        mg.gain.setValueAtTime(0.2, time);
+        mg.gain.exponentialRampToValueAtTime(0.001, time + 2);
+        osc.connect(mg);
+        mg.connect(gain);
+        osc.start(time);
+        osc.stop(time + 2);
+    }, 1000);
+    currentOscillators.push({ stop: () => clearInterval(melodyTimer) });
+  }
+};
+
+/**
+ * Plays ambient vibes based on the time of day.
+ */
+export const playContextualVibe = async (context: 'morning' | 'afternoon' | 'night') => {
+  const ctx = getAudioContext();
+  if (ctx.state === 'suspended') await ctx.resume();
+  stopAllSounds();
+
+  const now = ctx.currentTime;
+  const gain = ctx.createGain();
+  gain.connect(masterGain!);
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.3, now + 2);
+
+  if (context === 'morning') {
+    playMoodBackground('cheerful');
+  } else if (context === 'afternoon') {
+    playMoodBackground('focus');
+  } else {
+    playMoodBackground('calm');
   }
 };
 
 export const playAlarmSound = (type: string) => {
-    // 兼容旧逻辑，实际将被 playContextualVibe 取代
     const hour = new Date().getHours();
     let ctx: 'morning' | 'afternoon' | 'night' = 'night';
     if (hour >= 5 && hour < 11) ctx = 'morning';
