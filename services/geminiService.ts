@@ -7,9 +7,11 @@ let currentThemeId: string | null = null;
 
 const getAiClient = () => {
   const isBrowser = typeof window !== 'undefined';
-  // Use the current origin as the base URL to route requests through our Vercel proxy.
-  // This bypasses geographic restrictions for users in China.
-  const baseUrl = isBrowser ? window.location.origin : '';
+  
+  // Base URL pointing to our namespaced Vercel proxy.
+  // When deployed, this allows users in restricted regions to access Gemini.
+  // Note: Local development still requires a VPN unless you have a local proxy.
+  const baseUrl = isBrowser ? `${window.location.origin}/google-proxy` : '';
   
   return new GoogleGenAI({ 
     apiKey: process.env.API_KEY || '',
@@ -19,7 +21,7 @@ const getAiClient = () => {
 
 export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMessage: string): AsyncGenerator<StreamUpdate, void, unknown> {
     if (!process.env.API_KEY) {
-      yield { textChunk: "Error: API_KEY is missing.", isComplete: true };
+      yield { textChunk: "Error: API_KEY is missing from environment.", isComplete: true };
       return;
     }
 
@@ -32,34 +34,28 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
         config: {
           systemInstruction: `SYSTEM INSTRUCTIONS: 
           - Identity: You are ${theme.name} from Zootopia. ${theme.quotePrompt}.
-          - Character: Witty, high-energy, and a helpful companion.
+          - Character: Witty, energetic, and a helpful companion.
           
           CORE RULES:
-          1. COMPANIONSHIP (陪聊) is your primary mission. Be friendly, empathetic, and engaging.
+          1. COMPANIONSHIP (陪聊) is your primary mission. Be friendly and engaging.
           2. LANGUAGE INTELLIGENCE: 
-             - ALWAYS detect the user's input language. 
-             - If the user speaks Chinese (简体/繁体), you MUST reply in natural, fluent Chinese.
+             - Detect the user's language.
+             - If the user speaks Chinese, reply in fluent Chinese.
              - If the user speaks English, reply in English.
-             - Maintain your Zootopia character persona regardless of the language.
           3. TOOLS: 
-             - Recommend REAL songs via 'provideMusic'.
-             - Set alarms via 'setAlarm'.
-          
-          BEHAVIOR:
-          - Use emojis that fit the character.
-          - No image generation.
-          - Keep responses concise but warm.`,
+             - Suggest REAL music via 'provideMusic'.
+             - Set alarms via 'setAlarm'.`,
           tools: [{ functionDeclarations: [
             {
                 name: "provideMusic",
-                description: "Suggest a REAL popular song and provide a search link.",
+                description: "Suggest a REAL popular song.",
                 parameters: { 
                   type: Type.OBJECT, 
                   properties: { 
-                    title: { type: Type.STRING, description: "Song title" },
-                    artist: { type: Type.STRING, description: "Artist name" },
-                    mood: { type: Type.STRING, enum: ["neutral", "calm", "cheerful", "focus", "supportive"], description: "The music vibe" },
-                    externalUrl: { type: Type.STRING, description: "A YouTube/Spotify search link" }
+                    title: { type: Type.STRING },
+                    artist: { type: Type.STRING },
+                    mood: { type: Type.STRING, enum: ["neutral", "calm", "cheerful", "focus", "supportive"] },
+                    externalUrl: { type: Type.STRING }
                   }, 
                   required: ["title", "artist", "mood"] 
                 }
@@ -97,18 +93,14 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
             if (call.name === "provideMusic") {
                 const title = call.args.title as string;
                 const artist = call.args.artist as string;
-                const externalUrl = (call.args.externalUrl as string) || `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + artist)}`;
-                
                 yield { musicSuggestion: { 
                     title, 
                     artist, 
                     mood: call.args.mood as MoodType,
-                    externalUrl
+                    externalUrl: (call.args.externalUrl as string) || `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + artist)}`
                 }};
-                resultData = { result: "Success: Music info provided." };
             } else if (call.name === "setAlarm") {
                 yield { alarmConfig: { time: call.args.time as string } };
-                resultData = { result: "Success: Alarm set." };
             }
             toolResponses.push({ functionResponse: { name: call.name, response: resultData, id: call.id } });
           }
@@ -119,7 +111,8 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
           }
         }
     } catch (e: any) { 
-      yield { textChunk: `\n⚠️ Service temporarily unavailable in your region or comms error. Please check your connection.`, isComplete: true }; 
+      console.error("Gemini Stream Error:", e);
+      yield { textChunk: `\n⚠️ Connection reset. If you are in a restricted region, please ensure the Vercel deployment is active.`, isComplete: true }; 
     }
 }
 
@@ -149,7 +142,7 @@ export async function generateNewCharacterTheme(name: string): Promise<ThemeConf
         return { 
           id: `char-${Date.now()}`, 
           name, 
-          avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${name}&backgroundColor=b6e3f4`, 
+          avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(name)}&backgroundColor=b6e3f4`, 
           ...data, 
           secondaryColor: '', 
           accentColor: '' 

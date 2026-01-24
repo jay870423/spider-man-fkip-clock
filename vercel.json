@@ -2,12 +2,8 @@
 {
   "rewrites": [
     {
-      "source": "/v1beta/:path*",
-      "destination": "https://generativelanguage.googleapis.com/v1beta/:path*"
-    },
-    {
-      "source": "/v1/:path*",
-      "destination": "https://generativelanguage.googleapis.com/v1/:path*"
+      "source": "/google-proxy/:path*",
+      "destination": "https://generativelanguage.googleapis.com/:path*"
     }
   ]
 }
