@@ -31,7 +31,7 @@ const App: React.FC = () => {
   
   const [isIdle, setIsIdle] = useState(false);
   const [autoScreensaver, setAutoScreensaver] = useState(true);
-  const [idleDelay, setIdleDelay] = useState(15); 
+  const [idleDelay, setIdleDelay] = useState(30); // Increased default delay
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const idleTimerRef = useRef<number | null>(null);
@@ -97,12 +97,12 @@ const App: React.FC = () => {
         const data = await res.json();
         setWeather({ temp: Math.round(data.current.temperature_2m), code: data.current.weather_code, city: "当前位置" });
       } catch (e) {}
-    }, () => {}, { timeout: 5000 });
+    }, () => {}, { timeout: 10000 });
   }, []);
 
   return (
     <div className={`min-h-screen w-full bg-gradient-to-br ${currentTheme.bgGradient} transition-colors duration-1000 flex flex-col items-center overflow-x-hidden overflow-y-auto font-sans relative pb-20`}>
-      {/* Spider-Man Layer (z-60) */}
+      {/* Spider-Man Layer (z-40 to be behind UI but above background) */}
       <Spiderman />
       
       {/* Top Bar Navigation (z-80) */}
@@ -122,16 +122,16 @@ const App: React.FC = () => {
       </div>
 
       {/* Main Content Area */}
-      <main className={`flex-1 w-full max-w-4xl flex flex-col items-center justify-start gap-8 px-4 mt-4 transition-all duration-1000 ${isIdle ? 'opacity-0 scale-95 blur-xl pointer-events-none' : 'opacity-100 scale-100 blur-0'}`}>
+      <main className={`flex-1 w-full max-w-4xl flex flex-col items-center justify-start gap-6 sm:gap-10 px-4 mt-2 transition-all duration-1000 ${isIdle ? 'opacity-0 scale-95 blur-xl pointer-events-none' : 'opacity-100 scale-100 blur-0'}`}>
         
-        {/* Animals Selector (z-70 to be above Spiderman) */}
-        <div className="w-full relative z-[70] py-2">
+        {/* Animals Selector (z-70) - High priority visibility */}
+        <div className="w-full relative z-[70]">
           <CharacterSelector currentThemeId={themeId} themes={themes} onSelect={setThemeId} onAddClick={() => setIsModalOpen(true)} />
         </div>
 
-        {/* Flip Clock */}
-        <div className="flex flex-col items-center py-6">
-            <div className="flex items-center gap-2 sm:gap-4 scale-[0.8] sm:scale-100 lg:scale-110 transition-transform">
+        {/* Flip Clock - Responsive scaling */}
+        <div className="flex flex-col items-center py-2 sm:py-6">
+            <div className="flex items-center gap-2 sm:gap-4 scale-[0.75] sm:scale-100 lg:scale-110 xl:scale-125 transition-transform duration-500">
               <div className="flex gap-1.5"><FlipCard digit={time.hours[0]} animationClass={currentTheme.animationClass} /><FlipCard digit={time.hours[1]} animationClass={currentTheme.animationClass} /></div>
               <div className="flex flex-col gap-3 px-1"><div className="w-2 h-2 sm:w-3 sm:h-3 bg-white rounded-full animate-pulse shadow-[0_0_10px_white]" /><div className="w-2 h-2 sm:w-3 sm:h-3 bg-white rounded-full animate-pulse shadow-[0_0_10px_white]" /></div>
               <div className="flex gap-1.5"><FlipCard digit={time.minutes[0]} animationClass={currentTheme.animationClass} /><FlipCard digit={time.minutes[1]} animationClass={currentTheme.animationClass} /></div>
@@ -141,15 +141,15 @@ const App: React.FC = () => {
             <div className="mt-6 text-white/40 font-display text-lg tracking-[0.3em] uppercase">{time.ampm}</div>
         </div>
 
-        {/* Chat */}
+        {/* Chat - Responsive width */}
         <div className="w-full max-w-xl pb-10 relative z-[50]">
           <ChatWidget theme={currentTheme} onCharacterSwitch={setThemeId} onSetAlarm={(t) => setAlarm({ id: '1', time: t!, soundType: 'digital', isActive: true })} onStopAlarm={() => { setIsAlarmRinging(false); stopAllSounds(); }} />
         </div>
       </main>
 
-      {/* Screensaver Mode UI */}
+      {/* Screensaver Mode UI - Always fixed center */}
       <div className={`fixed inset-0 z-0 flex flex-col items-center justify-center transition-all duration-1000 pointer-events-none ${isIdle ? 'opacity-100 scale-100' : 'opacity-0 scale-110'}`}>
-          <div className="flex items-center gap-4 scale-[1.1] sm:scale-[1.8] lg:scale-[2.5] drop-shadow-[0_20px_60px_rgba(0,0,0,0.8)]">
+          <div className="flex items-center gap-4 scale-[1.0] sm:scale-[1.8] lg:scale-[2.5] drop-shadow-[0_20px_60px_rgba(0,0,0,0.8)]">
             <div className="flex gap-1"><FlipCard digit={time.hours[0]} animationClass={currentTheme.animationClass} /><FlipCard digit={time.hours[1]} animationClass={currentTheme.animationClass} /></div>
             <div className="flex flex-col gap-4 py-2"><div className="w-3 h-3 bg-white rounded-full shadow-[0_0_15px_white]" /><div className="w-3 h-3 bg-white rounded-full shadow-[0_0_15px_white]" /></div>
             <div className="flex gap-1"><FlipCard digit={time.minutes[0]} animationClass={currentTheme.animationClass} /><FlipCard digit={time.minutes[1]} animationClass={currentTheme.animationClass} /></div>

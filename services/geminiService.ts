@@ -8,16 +8,17 @@ let currentThemeId: string | null = null;
 
 /**
  * Creates a new instance of GoogleGenAI.
- * For China access, we point the baseUrl to our Vercel origin which handles the /v1beta/ rewrite.
+ * For domestic access (China), we use the Vercel rewrite proxy.
+ * Ensure the baseUrl points to the origin so /v1beta/ calls are proxied.
  */
 const getAiClient = () => {
   const isBrowser = typeof window !== 'undefined';
+  // Use window.location.origin to point back to our Vercel server for rewriting
   const baseUrl = isBrowser ? window.location.origin : undefined;
   
-  // Initialize with proxy support
   return new GoogleGenAI({ 
     apiKey: process.env.API_KEY || '',
-    baseUrl: baseUrl // SDK will use relative path on this origin if structured correctly
+    baseUrl: baseUrl 
   } as any);
 };
 
@@ -26,7 +27,7 @@ const getAiClient = () => {
  */
 export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMessage: string): AsyncGenerator<StreamUpdate, void, unknown> {
     if (!process.env.API_KEY) {
-      yield { textChunk: "错误: 未检测到 API_KEY。请在 Vercel 环境变量中配置后重试。", isComplete: true };
+      yield { textChunk: "错误: API Key 未配置。请在 Vercel 环境变量中设置 API_KEY。", isComplete: true };
       return;
     }
 
@@ -87,7 +88,8 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
                   if (img) yield { generatedImageUrl: img };
                   resultData = { result: img ? "已展示图片" : "生成失败" };
                 } catch (imgErr) {
-                  resultData = { result: "生成画作失败" };
+                  console.error("Image gen error:", imgErr);
+                  resultData = { result: "图片生成连接超时" };
                 }
             } else if (call.name === "setAlarm") {
                 yield { alarmConfig: { time: call.args.time as string } };
@@ -113,7 +115,8 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
         }
     } catch (e) { 
       console.error("Gemini Error:", e);
-      yield { textChunk: "连接异常。请确认网络环境或 Vercel 代理配置正确。", isComplete: true }; 
+      // More descriptive error for domestic users
+      yield { textChunk: "连接超时。由于国内访问限制，请确保您已在 Vercel 环境变量中正确设置 API_KEY，或尝试刷新页面重新连接。", isComplete: true }; 
     }
 }
 
@@ -146,12 +149,14 @@ export async function generateNewCharacterTheme(name: string): Promise<ThemeConf
         return { 
           id: `char-${Date.now()}`, 
           name, 
-          avatarUrl: `https://picsum.photos/seed/${name}/200`, 
+          // Using a more reliable avatar source or dynamic fallback
+          avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${name}`, 
           ...data, 
           secondaryColor: '', 
           accentColor: '' 
         };
     } catch (e) { 
+      console.error("Generate theme error:", e);
       return null; 
     }
 }
