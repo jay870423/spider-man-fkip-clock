@@ -46,11 +46,11 @@ const App: React.FC = () => {
   // Handle Fullscreen Toggle
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen();
+      document.documentElement.requestFullscreen().catch(() => {});
       setIsFullscreen(true);
     } else {
       if (document.exitFullscreen) {
-        document.exitFullscreen();
+        document.exitFullscreen().catch(() => {});
         setIsFullscreen(false);
       }
     }
@@ -91,7 +91,6 @@ const App: React.FC = () => {
         ampm: h >= 12 ? 'PM' : 'AM'
       });
       
-      // Dynamic local date formatting using browser's default locale
       setDateString(new Intl.DateTimeFormat(undefined, { 
         month: 'short', 
         day: 'numeric', 
@@ -122,7 +121,7 @@ const App: React.FC = () => {
 
   return (
     <div className={`min-h-[100dvh] w-full bg-gradient-to-br ${currentTheme.bgGradient} transition-colors duration-1000 flex flex-col items-center overflow-x-hidden font-sans relative pb-10 select-none`}>
-      {/* Background Physics Layer - Hide when idle */}
+      {/* Background Physics Layer */}
       <div className={`transition-opacity duration-1000 ${isIdle ? 'opacity-0' : 'opacity-100'}`}>
         <Spiderman />
       </div>
@@ -170,32 +169,27 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex flex-col items-center py-4">
-            <div className="flex items-center gap-2 sm:gap-6 scale-[0.8] sm:scale-100 transition-transform duration-500">
-              {/* Hours */}
+            <div className="flex items-center gap-2 sm:gap-6 scale-[0.85] sm:scale-100 transition-transform duration-500">
               <div className="flex gap-1.5">
                 <FlipCard digit={time.hours[0]} animationClass={currentTheme.animationClass} />
                 <FlipCard digit={time.hours[1]} animationClass={currentTheme.animationClass} />
               </div>
               
-              {/* Colon 1 */}
               <div className="flex flex-col gap-4 px-1">
                 <div className="w-2.5 h-2.5 sm:w-4 sm:h-4 bg-white rounded-full animate-pulse shadow-[0_0_15px_white]" />
                 <div className="w-2.5 h-2.5 sm:w-4 sm:h-4 bg-white rounded-full animate-pulse shadow-[0_0_15px_white]" />
               </div>
 
-              {/* Minutes */}
               <div className="flex gap-1.5">
                 <FlipCard digit={time.minutes[0]} animationClass={currentTheme.animationClass} />
                 <FlipCard digit={time.minutes[1]} animationClass={currentTheme.animationClass} />
               </div>
 
-              {/* Colon 2 */}
               <div className="flex flex-col gap-4 px-1 opacity-50">
                 <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white rounded-full shadow-[0_0_10px_white]" />
                 <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white rounded-full shadow-[0_0_10px_white]" />
               </div>
 
-              {/* Seconds (Smaller) */}
               <div className="flex gap-1.5 items-center">
                 <FlipCard digit={time.seconds[0]} animationClass={currentTheme.animationClass} isSeconds />
                 <FlipCard digit={time.seconds[1]} animationClass={currentTheme.animationClass} isSeconds />
@@ -209,30 +203,47 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      {/* Aesthetic Screensaver Overlay - Minimalist Mode */}
-      <div className={`fixed inset-0 z-[150] flex flex-col items-center justify-center transition-all duration-1000 bg-black/95 pointer-events-none ${isIdle ? 'opacity-100 scale-100' : 'opacity-0 scale-110'}`}>
-          <div className="flex items-center gap-4 sm:gap-12 scale-[1] sm:scale-[1.8] drop-shadow-[0_20px_80px_rgba(255,255,255,0.1)] transition-transform duration-1000">
-            <div className="flex gap-2">
-              <FlipCard digit={time.hours[0]} animationClass={currentTheme.animationClass} />
-              <FlipCard digit={time.hours[1]} animationClass={currentTheme.animationClass} />
+      {/* Aesthetic Screensaver Overlay - Mobile Optimized */}
+      <div 
+        className={`fixed inset-0 z-[150] flex flex-col items-center justify-center transition-all duration-1000 bg-black/95 pointer-events-auto ${isIdle ? 'opacity-100 scale-100' : 'opacity-0 scale-110 pointer-events-none'}`}
+        onClick={() => setIsIdle(false)}
+      >
+          {/* Subtle Character Background Element */}
+          <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] grayscale pointer-events-none overflow-hidden select-none">
+             <img src={currentTheme.avatarUrl} alt="" className="w-[120%] h-[120%] object-contain" />
+          </div>
+
+          <div className="flex flex-col items-center gap-6 sm:gap-16 scale-[0.9] xs:scale-100 sm:scale-[1.3] md:scale-[1.6] drop-shadow-[0_30px_100px_rgba(255,255,255,0.05)] transition-transform duration-1000">
+            {/* Primary Time HH:MM */}
+            <div className="flex items-center gap-3 sm:gap-12">
+              <div className="flex gap-2">
+                <FlipCard digit={time.hours[0]} animationClass={currentTheme.animationClass} />
+                <FlipCard digit={time.hours[1]} animationClass={currentTheme.animationClass} />
+              </div>
+              <div className="flex flex-col gap-6 sm:gap-12 py-2">
+                <div className="w-4 h-4 sm:w-6 sm:h-6 bg-white rounded-full shadow-[0_0_30px_white] animate-pulse" />
+                <div className="w-4 h-4 sm:w-6 sm:h-6 bg-white rounded-full shadow-[0_0_30px_white] animate-pulse" />
+              </div>
+              <div className="flex gap-2">
+                <FlipCard digit={time.minutes[0]} animationClass={currentTheme.animationClass} />
+                <FlipCard digit={time.minutes[1]} animationClass={currentTheme.animationClass} />
+              </div>
             </div>
-            <div className="flex flex-col gap-8 py-2">
-              <div className="w-5 h-5 bg-white rounded-full shadow-[0_0_30px_white]" />
-              <div className="w-5 h-5 bg-white rounded-full shadow-[0_0_30px_white]" />
+
+            {/* AM/PM and Seconds Row */}
+            <div className="flex items-center gap-6">
+              <div className="text-white/20 font-display text-2xl sm:text-4xl tracking-widest uppercase">{time.ampm}</div>
+              <div className="w-px h-8 sm:h-12 bg-white/10" />
+              <div className="flex gap-1.5 items-center opacity-40">
+                <FlipCard digit={time.seconds[0]} animationClass={currentTheme.animationClass} isSeconds />
+                <FlipCard digit={time.seconds[1]} animationClass={currentTheme.animationClass} isSeconds />
+              </div>
             </div>
-            <div className="flex gap-2">
-              <FlipCard digit={time.minutes[0]} animationClass={currentTheme.animationClass} />
-              <FlipCard digit={time.minutes[1]} animationClass={currentTheme.animationClass} />
-            </div>
-            {/* Minimal seconds for screensaver */}
-            <div className="flex flex-col gap-8 py-2 opacity-30">
-              <div className="w-3 h-3 bg-white rounded-full shadow-[0_0_15px_white]" />
-              <div className="w-3 h-3 bg-white rounded-full shadow-[0_0_15px_white]" />
-            </div>
-            <div className="flex gap-2 items-center">
-              <FlipCard digit={time.seconds[0]} animationClass={currentTheme.animationClass} isSeconds />
-              <FlipCard digit={time.seconds[1]} animationClass={currentTheme.animationClass} isSeconds />
-            </div>
+          </div>
+
+          {/* Interaction Instruction */}
+          <div className="absolute bottom-10 text-white/10 text-[10px] sm:text-xs font-black tracking-[0.3em] uppercase animate-pulse">
+             Tap anywhere to wake
           </div>
       </div>
 

@@ -27,14 +27,14 @@ export const FlipCard = memo(({ digit, animationClass, isSeconds }: FlipCardProp
 
   const finalAnim = isSeconds ? 'animate-flip-down' : animationClass;
   
-  // Responsive Sizes using clamp()
-  // Width will be between 80px and 200px based on viewport width
-  const cardWidth = isSeconds ? "w-[clamp(40px,10vw,80px)]" : "w-[clamp(80px,22vw,200px)]";
-  const cardHeight = isSeconds ? "h-[clamp(60px,15vw,120px)]" : "h-[clamp(120px,32vw,300px)]";
-  const fontSize = isSeconds ? "text-[clamp(1.5rem,6vw,4rem)]" : "text-[clamp(4rem,18vw,12rem)]";
+  // Refined Responsive Sizes for better mobile compatibility
+  // Width: Mobile ~60-70px, Desktop up to 200px
+  const cardWidth = isSeconds ? "w-[clamp(35px,8vw,80px)]" : "w-[clamp(65px,20vw,200px)]";
+  const cardHeight = isSeconds ? "h-[clamp(50px,12vw,120px)]" : "h-[clamp(100px,28vw,300px)]";
+  const fontSize = isSeconds ? "text-[clamp(1.2rem,5vw,4rem)]" : "text-[clamp(3rem,16vw,12rem)]";
 
   return (
-    <div className={`relative ${cardWidth} ${cardHeight} rounded-[12%] perspective-1000 bg-[#0a0a0a] shadow-[0_10px_40px_rgba(0,0,0,0.6)] overflow-hidden border border-white/5`}>
+    <div className={`relative ${cardWidth} ${cardHeight} rounded-[12%] perspective-1000 bg-[#0a0a0a] shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden border border-white/5`}>
       {/* Upper Half */}
       <div className="absolute top-0 w-full h-1/2 bg-gradient-to-b from-[#1a1a1a] to-[#121212] rounded-t-lg flex justify-center items-end overflow-hidden border-b border-black/80">
         <span className={`${fontSize} font-display text-white leading-none translate-y-1/2 drop-shadow-lg`}>{current}</span>
