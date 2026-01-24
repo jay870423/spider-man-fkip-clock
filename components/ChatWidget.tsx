@@ -31,6 +31,20 @@ const MusicPlayer: React.FC<{ music: MusicMetadata }> = ({ music }) => {
       };
   }, [isPlaying]);
 
+  // Determine platform label based on URL
+  const getPlatformLabel = (url?: string) => {
+    if (!url) return "Platform";
+    if (url.includes('y.qq.com')) return "QQ Music";
+    if (url.includes('music.163.com')) return "NetEase Cloud";
+    if (url.includes('kugou.com')) return "Kugou Music";
+    if (url.includes('youtube.com')) return "YouTube";
+    if (url.includes('spotify.com')) return "Spotify";
+    if (url.includes('baidu.com')) return "Baidu Music";
+    return "Music Platform";
+  };
+
+  const platformLabel = getPlatformLabel(music.externalUrl);
+
   return (
     <div className={`mt-3 p-4 bg-white/10 backdrop-blur-xl rounded-2xl border transition-all duration-500 flex flex-col gap-3 group ${isPlaying ? 'border-white/40 bg-white/20' : 'border-white/10'}`}>
       <div className="flex items-center gap-4">
@@ -66,7 +80,7 @@ const MusicPlayer: React.FC<{ music: MusicMetadata }> = ({ music }) => {
           rel="noopener noreferrer"
           className="flex items-center justify-center gap-2 py-2 px-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs text-white/80 hover:text-white transition-all font-bold"
         >
-          <span>🎧 Listen on Platform</span>
+          <span>🎧 Open on {platformLabel}</span>
           <span className="text-[10px]">↗</span>
         </a>
       )}

@@ -4,8 +4,6 @@ import { ThemeConfig, StreamUpdate, MoodType } from "../types";
 
 /**
  * GLOBAL FETCH INTERCEPTOR (ROBUST IMPLEMENTATION)
- * Some browsers prevent direct assignment to window.fetch because it's defined as a getter.
- * We use Object.defineProperty to safely redirect Google AI traffic through our Vercel proxy.
  */
 if (typeof window !== 'undefined' && !(window as any)._fetchIntercepted) {
   try {
@@ -36,21 +34,19 @@ let currentThemeId: string | null = null;
 
 const getAiClient = () => {
   const isBrowser = typeof window !== 'undefined';
-  
-  // Explicitly set baseUrl in the constructor as the primary method for proxying.
-  // This works alongside the fetch interceptor for maximum compatibility in restricted regions.
   const config: any = { 
     apiKey: process.env.API_KEY || ''
   };
 
   if (isBrowser) {
-    // Route via the Vercel proxy defined in vercel.json
-    // This allows requests to bypass regional blocks when deployed.
     config.baseUrl = `${window.location.origin}/google-proxy`;
   }
 
   return new GoogleGenAI(config);
 };
+
+// Helper to detect Chinese characters
+const containsChinese = (text: string) => /[\u4e00-\u9fa5]/.test(text);
 
 export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMessage: string): AsyncGenerator<StreamUpdate, void, unknown> {
     if (!process.env.API_KEY) {
@@ -75,20 +71,22 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
              - Detect the user's language.
              - If the user speaks Chinese, reply in fluent Chinese (简体中文).
              - If the user speaks English, reply in English.
-          3. TOOLS: 
+          3. TOOLS & REGIONAL PREFERENCES: 
              - Suggest REAL music via 'provideMusic'.
+             - IMPORTANT: If the user is speaking Chinese, provide 'externalUrl' from Chinese platforms like QQ Music (y.qq.com), NetEase (music.163.com), or Kugou. 
+             - If the user is speaking English/International languages, provide 'externalUrl' from YouTube or Spotify.
              - Set alarms via 'setAlarm'.`,
           tools: [{ functionDeclarations: [
             {
                 name: "provideMusic",
-                description: "Suggest a REAL popular song.",
+                description: "Suggest a REAL popular song. Provide a regional link if possible.",
                 parameters: { 
                   type: Type.OBJECT, 
                   properties: { 
                     title: { type: Type.STRING },
                     artist: { type: Type.STRING },
                     mood: { type: Type.STRING, enum: ["neutral", "calm", "cheerful", "focus", "supportive"] },
-                    externalUrl: { type: Type.STRING }
+                    externalUrl: { type: Type.STRING, description: "URL to the song on a platform like YouTube, QQ Music, or Spotify." }
                   }, 
                   required: ["title", "artist", "mood"] 
                 }
@@ -126,11 +124,24 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
             if (call.name === "provideMusic") {
                 const title = call.args.title as string;
                 const artist = call.args.artist as string;
+                
+                // Intelligent Fallback Logic based on language
+                let fallbackUrl = "";
+                const isChineseRequest = containsChinese(userMessage) || containsChinese(title) || containsChinese(artist);
+                
+                if (isChineseRequest) {
+                  // Fallback to QQ Music search for Chinese users
+                  fallbackUrl = `https://y.qq.com/n/ryqq/search?w=${encodeURIComponent(title + ' ' + artist)}`;
+                } else {
+                  // Fallback to YouTube for international users
+                  fallbackUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + artist)}`;
+                }
+
                 yield { musicSuggestion: { 
                     title, 
                     artist, 
                     mood: call.args.mood as MoodType,
-                    externalUrl: (call.args.externalUrl as string) || `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + artist)}`
+                    externalUrl: (call.args.externalUrl as string) || fallbackUrl
                 }};
             } else if (call.name === "setAlarm") {
                 yield { alarmConfig: { time: call.args.time as string } };
@@ -145,7 +156,7 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
         }
     } catch (e: any) { 
       console.error("Gemini Proxy Error:", e);
-      yield { textChunk: `\n⚠️ 连接异常。如果您在中国境内使用，请确保项目已正确部署到 Vercel 以激活反向代理。本地开发环境仍需开启 VPN。`, isComplete: true }; 
+      yield { textChunk: `\n⚠️ 连接异常。如果您在中国境内使用，请确保项目已正确部署到 Vercel 以激活反向代理。`, isComplete: true }; 
     }
 }
 
