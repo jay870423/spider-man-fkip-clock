@@ -19,14 +19,12 @@ const MusicPlayer: React.FC<{ music: MusicMetadata }> = ({ music }) => {
       stopAllSounds();
       setIsPlaying(false);
     } else {
-      // AudioContext.resume() is handled inside playMoodBackground
       playMoodBackground(music.mood).then(() => {
         setIsPlaying(true);
       });
     }
   };
 
-  // Cleanup on unmount
   useEffect(() => {
       return () => {
         if (isPlaying) stopAllSounds();
@@ -34,58 +32,65 @@ const MusicPlayer: React.FC<{ music: MusicMetadata }> = ({ music }) => {
   }, [isPlaying]);
 
   return (
-    <div className={`mt-3 p-4 bg-white/10 backdrop-blur-xl rounded-2xl border transition-all duration-500 flex items-center gap-4 group ${isPlaying ? 'border-white/40 bg-white/20' : 'border-white/10'}`}>
-      <button 
-        onClick={togglePlay}
-        className={`w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transform hover:scale-105 active:scale-90 transition-all ${isPlaying ? 'bg-red-500 text-white' : 'bg-white text-black'}`}
-      >
-        {isPlaying ? (
-          <div className="flex gap-1.5 items-center">
-            <div className="w-1.5 h-5 bg-white rounded-full"></div>
-            <div className="w-1.5 h-5 bg-white rounded-full"></div>
+    <div className={`mt-3 p-4 bg-white/10 backdrop-blur-xl rounded-2xl border transition-all duration-500 flex flex-col gap-3 group ${isPlaying ? 'border-white/40 bg-white/20' : 'border-white/10'}`}>
+      <div className="flex items-center gap-4">
+        <button 
+          onClick={togglePlay}
+          className={`w-12 h-12 rounded-full flex items-center justify-center shadow-2xl transform hover:scale-105 active:scale-90 transition-all ${isPlaying ? 'bg-red-500 text-white' : 'bg-white text-black'}`}
+          title="Play mood ambient"
+        >
+          {isPlaying ? (
+            <div className="flex gap-1 items-center">
+              <div className="w-1 h-4 bg-white rounded-full"></div>
+              <div className="w-1 h-4 bg-white rounded-full"></div>
+            </div>
+          ) : (
+            <span className="text-xl ml-0.5">▶</span>
+          )}
+        </button>
+        
+        <div className="flex-1 overflow-hidden">
+          <div className="flex items-center gap-2">
+             <span className="text-[9px] bg-white/20 text-white px-2 py-0.5 rounded-full uppercase font-bold tracking-widest">{music.mood} VIBE</span>
+             {isPlaying && <span className="text-[9px] text-green-400 animate-pulse font-bold uppercase">Synthesizing...</span>}
           </div>
-        ) : (
-          <span className="text-2xl ml-1">▶</span>
-        )}
-      </button>
-      
-      <div className="flex-1 overflow-hidden">
-        <div className="flex items-center gap-2">
-           <span className="text-[10px] bg-white/20 text-white px-2 py-0.5 rounded-full uppercase font-bold tracking-widest">{music.mood}</span>
-           {isPlaying && <span className="text-[10px] text-green-400 animate-pulse font-bold uppercase">Now Playing</span>}
+          <h4 className="text-white font-black text-sm mt-0.5 truncate">{music.title}</h4>
+          <p className="text-white/50 text-[10px] truncate">{music.artist}</p>
         </div>
-        <h4 className="text-white font-black text-sm mt-1 truncate">{music.title}</h4>
-        <p className="text-white/50 text-[10px] truncate">{music.artist}</p>
       </div>
 
-      <div className="flex gap-1 items-end h-6 w-8">
-          {[0.4, 0.8, 0.5, 0.9].map((h, i) => (
-              <div 
-                key={i} 
-                className={`w-1 bg-white/30 rounded-full transition-all duration-300 ${isPlaying ? 'animate-[bounce_1s_infinite]' : 'h-1'}`}
-                style={{ 
-                    height: isPlaying ? `${h * 100}%` : '4px',
-                    animationDelay: `${i * 0.15}s`
-                }}
-              ></div>
-          ))}
-      </div>
+      {music.externalUrl && (
+        <a 
+          href={music.externalUrl} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 py-2 px-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs text-white/80 hover:text-white transition-all font-bold"
+        >
+          <span>🎧 Listen on Platform</span>
+          <span className="text-[10px]">↗</span>
+        </a>
+      )}
     </div>
   );
 };
 
 export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAlarm, onStopAlarm }) => {
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'model', text: `警官 ${theme.name} 已就位！想听点音乐放松一下吗？或者让我帮你设个闹钟。` }
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const activeThemeIdRef = useRef(theme.id);
 
+  // Initial welcome based on the character
   useEffect(() => {
     activeThemeIdRef.current = theme.id;
-    setMessages(prev => [...prev, { role: 'model', text: `已连接到 ${theme.name}。有什么我可以帮你的？` }]);
+    const greetings = [
+      `Officer ${theme.name} reporting! 🚔 Ready to hang out, listen to music, or just chat about life. What's on your mind?`,
+      `Hey there! It's ${theme.name}. I'm here to keep you company while you work. Feel like talking?`,
+      `Welcome to the Zootopia flip clock. I'm ${theme.name}, your companion for today. How are you feeling?`
+    ];
+    const randomGreeting = greetings[Math.floor(Math.random() * greetings.length)];
+    setMessages([{ role: 'model', text: randomGreeting }]);
   }, [theme.id]);
 
   useEffect(() => {
@@ -132,7 +137,7 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
             ...prev, 
             { 
               role: 'model', 
-              text: `为你推荐一首动听的旋律：`, 
+              text: `Since you asked, here's a great song to match our vibe:`, 
               music: update.musicSuggestion 
             }
           ]);
@@ -142,7 +147,7 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
         if (update.stopAlarm) onStopAlarm();
       }
     } catch (err: any) {
-      setMessages(prev => [...prev, { role: 'model', text: `⚠️ 通讯异常: ${err.message}` }]);
+      setMessages(prev => [...prev, { role: 'model', text: `⚠️ Error: ${err.message}` }]);
     } finally {
       setIsLoading(false);
     }
@@ -158,7 +163,7 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
             </div>
             <div className="flex flex-col">
               <span className="text-white text-[10px] font-black tracking-widest uppercase">{theme.name}</span>
-              <span className="text-green-400 text-[8px] font-bold animate-pulse">● 在线任务中</span>
+              <span className="text-green-400 text-[8px] font-bold animate-pulse">● Online & Ready to Chat</span>
             </div>
           </div>
           {isLoading && <div className="w-2 h-2 bg-blue-400 rounded-full animate-ping"></div>}
@@ -191,7 +196,7 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={isLoading}
-            placeholder={isLoading ? "警官正在处理中..." : "输入指令，如：'来首放松的音乐'"}
+            placeholder={isLoading ? "Typing..." : "Say something, ask for music or an alarm..."}
             className="w-full bg-white/5 border border-white/10 rounded-full pl-6 pr-14 py-4 text-sm text-white placeholder-white/20 focus:outline-none focus:border-blue-500/50 focus:bg-white/10 transition-all shadow-inner"
           />
           <button 
@@ -199,7 +204,7 @@ export const ChatWidget: React.FC<Props> = ({ theme, onCharacterSwitch, onSetAla
             disabled={isLoading || !input.trim()}
             className={`absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full flex items-center justify-center transition-all ${isLoading ? 'opacity-20 cursor-wait' : 'bg-white/10 text-white hover:bg-white/20 active:scale-90'}`}
           >
-            {isLoading ? "⌛" : "➤"}
+            {isLoading ? "..." : "➤"}
           </button>
         </form>
       </div>

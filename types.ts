@@ -36,13 +36,14 @@ export interface MusicMetadata {
   title: string;
   artist: string;
   mood: MoodType;
+  externalUrl?: string; // New: Link to real music platforms
 }
 
 export interface ChatMessage {
   role: 'user' | 'model';
   text: string;
   imageUrl?: string; 
-  music?: MusicMetadata; // New: Supports music suggestions
+  music?: MusicMetadata;
 }
 
 export interface Alarm {
@@ -60,7 +61,7 @@ export interface StreamUpdate {
     time?: string;
     soundType?: string;
   };
-  musicSuggestion?: MusicMetadata; // New: Model suggested music
+  musicSuggestion?: MusicMetadata;
   moodMusic?: MoodType; 
   stopAlarm?: boolean;
   isComplete?: boolean;

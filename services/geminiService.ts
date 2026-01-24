@@ -7,16 +7,19 @@ let currentThemeId: string | null = null;
 
 const getAiClient = () => {
   const isBrowser = typeof window !== 'undefined';
-  const origin = isBrowser ? window.location.origin.replace(/\/$/, '') : '';
+  // Use the current origin as the base URL to route requests through our Vercel proxy.
+  // This bypasses geographic restrictions for users in China.
+  const baseUrl = isBrowser ? window.location.origin : '';
+  
   return new GoogleGenAI({ 
     apiKey: process.env.API_KEY || '',
-    baseUrl: origin 
+    baseUrl: baseUrl 
   } as any);
 };
 
 export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMessage: string): AsyncGenerator<StreamUpdate, void, unknown> {
     if (!process.env.API_KEY) {
-      yield { textChunk: "错误: 请在环境变量中配置 API_KEY。", isComplete: true };
+      yield { textChunk: "Error: API_KEY is missing.", isComplete: true };
       return;
     }
 
@@ -27,21 +30,36 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
       chatSession = client.chats.create({
         model: "gemini-3-flash-preview",
         config: {
-          systemInstruction: `${theme.quotePrompt}. 你是疯狂动物城的 ${theme.name}。
-          - 如果用户想要听音乐、放松或来点旋律，请使用 provideMusic 工具。
-          - 设闹钟使用 setAlarm。
-          - 你只能通过文字聊天，不提供画图功能。
-          - 回答简短，多用 Emoji，必须说中文。`,
+          systemInstruction: `SYSTEM INSTRUCTIONS: 
+          - Identity: You are ${theme.name} from Zootopia. ${theme.quotePrompt}.
+          - Character: Witty, high-energy, and a helpful companion.
+          
+          CORE RULES:
+          1. COMPANIONSHIP (陪聊) is your primary mission. Be friendly, empathetic, and engaging.
+          2. LANGUAGE INTELLIGENCE: 
+             - ALWAYS detect the user's input language. 
+             - If the user speaks Chinese (简体/繁体), you MUST reply in natural, fluent Chinese.
+             - If the user speaks English, reply in English.
+             - Maintain your Zootopia character persona regardless of the language.
+          3. TOOLS: 
+             - Recommend REAL songs via 'provideMusic'.
+             - Set alarms via 'setAlarm'.
+          
+          BEHAVIOR:
+          - Use emojis that fit the character.
+          - No image generation.
+          - Keep responses concise but warm.`,
           tools: [{ functionDeclarations: [
             {
                 name: "provideMusic",
-                description: "Suggest a song based on the user's mood or request.",
+                description: "Suggest a REAL popular song and provide a search link.",
                 parameters: { 
                   type: Type.OBJECT, 
                   properties: { 
                     title: { type: Type.STRING, description: "Song title" },
                     artist: { type: Type.STRING, description: "Artist name" },
-                    mood: { type: Type.STRING, enum: ["neutral", "calm", "cheerful", "focus", "supportive"], description: "The vibe of the song" }
+                    mood: { type: Type.STRING, enum: ["neutral", "calm", "cheerful", "focus", "supportive"], description: "The music vibe" },
+                    externalUrl: { type: Type.STRING, description: "A YouTube/Spotify search link" }
                   }, 
                   required: ["title", "artist", "mood"] 
                 }
@@ -77,15 +95,20 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
             let resultData: any = { status: "ok" };
             
             if (call.name === "provideMusic") {
+                const title = call.args.title as string;
+                const artist = call.args.artist as string;
+                const externalUrl = (call.args.externalUrl as string) || `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + artist)}`;
+                
                 yield { musicSuggestion: { 
-                    title: call.args.title as string, 
-                    artist: call.args.artist as string, 
-                    mood: call.args.mood as MoodType 
+                    title, 
+                    artist, 
+                    mood: call.args.mood as MoodType,
+                    externalUrl
                 }};
-                resultData = { result: "Music player displayed." };
+                resultData = { result: "Success: Music info provided." };
             } else if (call.name === "setAlarm") {
                 yield { alarmConfig: { time: call.args.time as string } };
-                resultData = { result: "Alarm set." };
+                resultData = { result: "Success: Alarm set." };
             }
             toolResponses.push({ functionResponse: { name: call.name, response: resultData, id: call.id } });
           }
@@ -96,7 +119,7 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
           }
         }
     } catch (e: any) { 
-      yield { textChunk: `\n⚠️ 连接中断: ${e.message}`, isComplete: true }; 
+      yield { textChunk: `\n⚠️ Service temporarily unavailable in your region or comms error. Please check your connection.`, isComplete: true }; 
     }
 }
 
