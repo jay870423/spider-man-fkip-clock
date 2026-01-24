@@ -45,7 +45,7 @@ const getAiClient = () => {
   return new GoogleGenAI(config);
 };
 
-// Helper to detect Chinese characters
+// Helper to detect Chinese characters (still useful for responding in the right language)
 const containsChinese = (text: string) => /[\u4e00-\u9fa5]/.test(text);
 
 export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMessage: string): AsyncGenerator<StreamUpdate, void, unknown> {
@@ -68,21 +68,21 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
           1. COMPANIONSHIP: Be friendly, witty, and helpful.
           2. LANGUAGE: Detect user language. Reply in the SAME language.
           3. MEDIA & PLATFORMS (CRITICAL): 
-             - For CHINESE users: Suggest music/media from Baidu Music (Taihe), QQ Music, or Kugou.
-             - For INTERNATIONAL users: Suggest music, movies, or videos ONLY from YouTube.
+             - Suggest music, movies, or videos ONLY from YouTube for ALL users (regardless of language).
+             - Provide high-quality YouTube search links or direct video URLs.
           4. TOOL USE: Use 'provideMusic' for both music and video/movie recommendations. Use 'setAlarm' for clocks.
-          5. NO DUPLICATION: Do NOT repeat the song/movie name or description after the tool executes. Do NOT say "I will now search for..." or "Here is the result...". Let the tool output speak for itself with a very brief (max 1 sentence) intro.`,
+          5. NO DUPLICATION: Do NOT repeat the song/movie name or description after the tool executes. Give a very brief (max 1 sentence) intro.`,
           tools: [{ functionDeclarations: [
             {
                 name: "provideMusic",
-                description: "Suggest a real song, movie, or video. Use YouTube for international and Chinese platforms for Chinese users.",
+                description: "Suggest a real song, movie, or video. Always use YouTube links for the best experience.",
                 parameters: { 
                   type: Type.OBJECT, 
                   properties: { 
                     title: { type: Type.STRING },
-                    artist: { type: Type.STRING, description: "Artist or Movie Director/Studio" },
+                    artist: { type: Type.STRING, description: "Artist, Band, Director or Studio" },
                     mood: { type: Type.STRING, enum: ["neutral", "calm", "cheerful", "focus", "supportive"] },
-                    externalUrl: { type: Type.STRING, description: "Direct link to the media on the appropriate platform." }
+                    externalUrl: { type: Type.STRING, description: "A valid YouTube search or watch link." }
                   }, 
                   required: ["title", "artist", "mood"] 
                 }
@@ -108,7 +108,6 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
         let functionCalls: any[] = [];
         
         for await (const chunk of resultStream) {
-          // Filter out text that looks like reasoning or tool preamble to prevent duplicate-feeling output
           const chunkText = chunk.text;
           if (chunkText && !chunkText.includes('provideMusic') && !chunkText.includes('setAlarm')) { 
             yield { textChunk: chunkText }; 
@@ -124,16 +123,10 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
             if (call.name === "provideMusic") {
                 const title = call.args.title as string;
                 const artist = call.args.artist as string;
-                const isChineseRequest = containsChinese(userMessage) || containsChinese(title) || containsChinese(artist);
                 
-                let fallbackUrl = "";
-                if (isChineseRequest) {
-                  // Prioritize Baidu Music or Search for Chinese users
-                  fallbackUrl = `https://www.baidu.com/s?wd=${encodeURIComponent(title + ' ' + artist + ' 音乐')}`;
-                } else {
-                  // Everything else goes to YouTube
-                  fallbackUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + artist)}`;
-                }
+                // UNIFIED: Always point to YouTube search for consistent global UX
+                const query = encodeURIComponent(`${title} ${artist}`);
+                const fallbackUrl = `https://www.youtube.com/results?search_query=${query}`;
 
                 yield { musicSuggestion: { 
                     title, 
@@ -147,10 +140,8 @@ export async function* sendMessageToCharacterStream(theme: ThemeConfig, userMess
             toolResponses.push({ functionResponse: { name: call.name, response: resultData, id: call.id } });
           }
           
-          // Execute second turn to close the tool call loop without adding extra text
           const secondTurn = await chatSession.sendMessageStream({ message: toolResponses });
           for await (const chunk of secondTurn) { 
-             // We generally ignore text from the second turn if it's just repetition
              if (chunk.text && chunk.text.length > 5 && !chunk.text.toLowerCase().includes('ok')) {
                 yield { textChunk: chunk.text }; 
              }
